@@ -1,41 +1,29 @@
 @import "tailwindcss";
 
 :root {
-  --background: #f8fafc;
-  --foreground: #0f172a;
-  
-  /* NUTRIO Green Theme */
-  --primary: #16a34a;
-  --primary-hover: #15803d;
-  --primary-light: #dcfce7;
-  
-  /* Accent & Nutri-Score colors */
-  --nutri-a: #15803d;
-  --nutri-b: #84cc16;
-  --nutri-c: #eab308;
-  --nutri-d: #f97316;
-  --nutri-e: #ef4444;
+  --background: #FBF8F3;
+  --foreground: #2C3E30;
+  --cream-bg: #FBF8F3;
+  --cream-card: #FFFFFF;
+  --cream-border: #EFE8DE;
+  --olive-green: #5F7E66;
+  --forest-green: #3D5A45;
+  --caramel-brown: #C5853B;
+  --caramel-hover: #B4752E;
 }
 
 body {
-  background-color: var(--background);
-  color: var(--foreground);
-  font-family: var(--font-inter), system-ui, -apple-system, sans-serif;
-  -webkit-font-smoothing: antialiased;
+  background-color: #FBF8F3;
+  color: #2C3E30;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  overflow-x: hidden;
 }
 
-/* Custom modern scrollbar */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+/* Custom scrollbar for horizontal categories */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
 }
-::-webkit-scrollbar-track {
-  background: #f1f5f9;
-}
-::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
-  border-radius: 9999px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }

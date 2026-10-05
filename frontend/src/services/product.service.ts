@@ -1,70 +1,81 @@
 import { apiClient } from '@/lib/api/axios';
-import { ApiResponse, Product, ProductFilterParams, Category } from '@/types';
-import { mockProducts, categories } from '@/lib/mockData';
+
+export interface ProductItem {
+  id: number;
+  name: string;
+  slug: string;
+  shortDescription?: string;
+  category: {
+    id: number;
+    name: string;
+    slug: string;
+  };
+  brand?: { id: number; name: string } | null;
+  nutriScoreGrade: 'A' | 'B' | 'C' | 'D' | 'E';
+  nutriScorePoints?: number;
+  avgRating: number;
+  reviewCount: number;
+  soldCount: number;
+  isFeatured: boolean;
+  primaryImage: string;
+  defaultVariant?: {
+    id: number;
+    sku: string;
+    name: string;
+    price: number;
+    compareAtPrice?: number | null;
+    netWeightG: number;
+  } | null;
+  nutrition?: {
+    caloriesKcal: number;
+    proteinG: number;
+    carbG: number;
+    fatG: number;
+    sugarG?: number;
+    fiberG?: number;
+  } | null;
+  diets?: { code: string; name: string; iconUrl?: string | null }[];
+  allergens?: { code: string; name: string; relation: string }[];
+}
+
+export interface CategoryItem {
+  id: number;
+  name: string;
+  slug: string;
+  description?: string;
+  imageUrl?: string;
+  sortOrder: number;
+  productCount: number;
+}
 
 export const productService = {
-  /**
-   * Lấy danh sách sản phẩm với bộ lọc & phân trang
-   */
-  async getProducts(params?: ProductFilterParams): Promise<ApiResponse<Product[]>> {
-    try {
-      const response = await apiClient.get<ApiResponse<Product[]>>('/products', { params });
-      return response.data;
-    } catch {
-      // Fallback sang mock data nếu API chưa khởi chạy
-      let filtered = [...mockProducts];
-      if (params?.categoryId && params.categoryId !== 'all') {
-        filtered = filtered.filter((p) => p.categoryId === params.categoryId);
-      }
-      if (params?.search) {
-        filtered = filtered.filter((p) =>
-          p.name.toLowerCase().includes(params.search!.toLowerCase())
-        );
-      }
-      return {
-        statusCode: 200,
-        message: 'Success',
-        data: filtered,
-        meta: {
-          total: filtered.length,
-          page: 1,
-          limit: 10,
-          totalPages: 1,
-        },
-      };
-    }
+  async getProducts(params?: {
+    categorySlug?: string;
+    dietCode?: string;
+    excludeAllergen?: string;
+    nutriScore?: string;
+    maxCalories?: number;
+    isFeatured?: boolean;
+    search?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<{ data: ProductItem[]; meta: { total: number; page: number; limit: number; totalPages: number } }> {
+    const response = await apiClient.get('/products', { params });
+    return response.data;
   },
 
-  /**
-   * Lấy chi tiết sản phẩm theo slug
-   */
-  async getProductBySlug(slug: string): Promise<ApiResponse<Product>> {
-    try {
-      const response = await apiClient.get<ApiResponse<Product>>(`/products/${slug}`);
-      return response.data;
-    } catch {
-      const found = mockProducts.find((p) => p.slug === slug) || mockProducts[0];
-      return {
-        statusCode: 200,
-        message: 'Success',
-        data: found,
-      };
-    }
+  async getProductBySlug(slug: string) {
+    const response = await apiClient.get(`/products/${slug}`);
+    return response.data;
   },
 
-  /**
-   * Lấy danh mục thực phẩm
-   */
-  async getCategories(): Promise<ApiResponse<Category[]>> {
-    try {
-      const response = await apiClient.get<ApiResponse<Category[]>>('/categories');
-      return response.data;
-    } catch {
-      return {
-        statusCode: 200,
-        message: 'Success',
-        data: categories,
-      };
-    }
+  async getCategories(): Promise<CategoryItem[]> {
+    const response = await apiClient.get('/categories');
+    return response.data;
+  },
+
+  async getTraceability(qrCode: string) {
+    const response = await apiClient.get(`/products/traceability/${qrCode}`);
+    return response.data;
   },
 };

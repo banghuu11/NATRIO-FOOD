@@ -16,6 +16,7 @@ import { CouponsModule } from './modules/coupons/coupons.module';
 import { QuizModule } from './modules/quiz/quiz.module';
 import { RecipesModule } from './modules/recipes/recipes.module';
 import { ReviewsModule } from './modules/reviews/reviews.module';
+import { BannersModule } from './modules/banners/banners.module';
 
 @Module({
   imports: [
@@ -35,6 +36,7 @@ import { ReviewsModule } from './modules/reviews/reviews.module';
     QuizModule,
     RecipesModule,
     ReviewsModule,
+    BannersModule,
   ],
   controllers: [AppController],
   providers: [AppService],

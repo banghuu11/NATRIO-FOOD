@@ -14,7 +14,10 @@ export type ProductBadge =
   | 'KETO' 
   | 'HIGH_PROTEIN' 
   | 'LOW_SUGAR' 
-  | 'GLUTEN_FREE';
+  | 'GLUTEN_FREE'
+  | 'FLASH_SALE'
+  | 'RECOMMENDED'
+  | (string & {});
 
 export type Allergen = 
   | 'PEANUTS' 
