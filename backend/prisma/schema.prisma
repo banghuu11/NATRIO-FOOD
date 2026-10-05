@@ -1,15 +1,1813 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
-  provider = "prisma-client"
-  output   = "../generated/prisma"
+  provider = "prisma-client-js"
 }
 
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+}
+
+model addresses {
+  id             BigInt          @id @default(autoincrement())
+  user_id        BigInt
+  label          String?         @db.VarChar(40)
+  recipient_name String          @db.VarChar(150)
+  phone          String          @db.VarChar(20)
+  province       String          @db.VarChar(100)
+  district       String          @db.VarChar(100)
+  ward           String          @db.VarChar(100)
+  street         String          @db.VarChar(255)
+  note           String?
+  latitude       Decimal?        @db.Decimal(9, 6)
+  longitude      Decimal?        @db.Decimal(9, 6)
+  is_default     Boolean         @default(false)
+  created_at     DateTime        @default(now()) @db.Timestamptz(6)
+  updated_at     DateTime        @default(now()) @db.Timestamptz(6)
+  users          users           @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  orders         orders[]
+  subscriptions  subscriptions[]
+
+  @@index([user_id], map: "idx_addresses_user")
+}
+
+model allergens {
+  id                  BigInt                @id @default(autoincrement())
+  code                String                @unique @db.VarChar(40)
+  name_vi             String                @db.VarChar(100)
+  name_en             String?               @db.VarChar(100)
+  description         String?
+  icon_url            String?
+  product_allergens   product_allergens[]
+  quiz_option_effects quiz_option_effects[]
+  user_allergens      user_allergens[]
+}
+
+model audit_logs {
+  id          BigInt   @id @default(autoincrement())
+  user_id     BigInt?
+  action      String   @db.VarChar(10)
+  entity_type String   @db.VarChar(60)
+  entity_id   BigInt?
+  old_data    Json?
+  new_data    Json?
+  ip_address  String?  @db.Inet
+  created_at  DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([entity_type, entity_id], map: "idx_audit_entity")
+  @@index([user_id, created_at(sort: Desc)], map: "idx_audit_user")
+}
+
+model badges {
+  id            BigInt        @id @default(autoincrement())
+  code          String        @unique @db.VarChar(40)
+  name          String        @db.VarChar(120)
+  description   String?
+  icon_url      String?
+  points_reward Int           @default(0)
+  challenges    challenges[]
+  user_badges   user_badges[]
+}
+
+model banners {
+  id         BigInt    @id @default(autoincrement())
+  title      String?   @db.VarChar(200)
+  image_url  String
+  link_url   String?
+  position   String    @default("home_hero") @db.VarChar(40)
+  sort_order Int       @default(0)
+  starts_at  DateTime? @db.Timestamptz(6)
+  ends_at    DateTime? @db.Timestamptz(6)
+  is_active  Boolean   @default(true)
+}
+
+model blog_categories {
+  id         BigInt       @id @default(autoincrement())
+  name       String       @db.VarChar(120)
+  slug       String       @unique @db.VarChar(150)
+  blog_posts blog_posts[]
+}
+
+model blog_comments {
+  id                  BigInt          @id @default(autoincrement())
+  post_id             BigInt
+  user_id             BigInt
+  parent_id           BigInt?
+  content             String
+  status              review_status   @default(approved)
+  created_at          DateTime        @default(now()) @db.Timestamptz(6)
+  blog_comments       blog_comments?  @relation("blog_commentsToblog_comments", fields: [parent_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  other_blog_comments blog_comments[] @relation("blog_commentsToblog_comments")
+  blog_posts          blog_posts      @relation(fields: [post_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users               users           @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([post_id], map: "idx_blog_comments_post")
+}
+
+model blog_post_tags {
+  post_id    BigInt
+  tag_id     BigInt
+  blog_posts blog_posts @relation(fields: [post_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  tags       tags       @relation(fields: [tag_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([post_id, tag_id])
+}
+
+model blog_posts {
+  id               BigInt                   @id @default(autoincrement())
+  category_id      BigInt?
+  author_id        BigInt?
+  title            String                   @db.VarChar(300)
+  slug             String                   @unique @db.VarChar(330)
+  summary          String?
+  content          String
+  cover_image_url  String?
+  expert_reviewer  String?                  @db.VarChar(150)
+  is_published     Boolean                  @default(false)
+  published_at     DateTime?                @db.Timestamptz(6)
+  view_count       Int                      @default(0)
+  meta_title       String?                  @db.VarChar(200)
+  meta_description String?                  @db.VarChar(320)
+  search_vector    Unsupported("tsvector")?
+  created_at       DateTime                 @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime                 @default(now()) @db.Timestamptz(6)
+  blog_comments    blog_comments[]
+  blog_post_tags   blog_post_tags[]
+  users            users?                   @relation(fields: [author_id], references: [id], onUpdate: NoAction)
+  blog_categories  blog_categories?         @relation(fields: [category_id], references: [id], onUpdate: NoAction)
+
+  @@index([is_published, published_at(sort: Desc)], map: "idx_blog_published")
+  @@index([search_vector], map: "idx_blog_search", type: Gin)
+}
+
+model brands {
+  id          BigInt     @id @default(autoincrement())
+  name        String     @db.VarChar(120)
+  slug        String     @unique @db.VarChar(150)
+  logo_url    String?
+  country     String?    @db.VarChar(80)
+  description String?
+  is_active   Boolean    @default(true)
+  products    products[]
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model bundle_items {
+  bundle_id        BigInt
+  variant_id       BigInt
+  quantity         Int              @default(1)
+  bundles          bundles          @relation(fields: [bundle_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  product_variants product_variants @relation(fields: [variant_id], references: [id], onUpdate: NoAction)
+
+  @@id([bundle_id, variant_id])
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model bundles {
+  id           BigInt         @id @default(autoincrement())
+  name         String         @db.VarChar(200)
+  slug         String         @unique @db.VarChar(240)
+  description  String?
+  image_url    String?
+  price        Decimal        @db.Decimal(14, 0)
+  starts_at    DateTime?      @db.Timestamptz(6)
+  ends_at      DateTime?      @db.Timestamptz(6)
+  is_active    Boolean        @default(true)
+  created_at   DateTime       @default(now()) @db.Timestamptz(6)
+  updated_at   DateTime       @default(now()) @db.Timestamptz(6)
+  bundle_items bundle_items[]
+  cart_items   cart_items[]
+  order_items  order_items[]
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model cart_items {
+  id               BigInt            @id @default(autoincrement())
+  cart_id          BigInt
+  variant_id       BigInt?
+  bundle_id        BigInt?
+  quantity         Int               @default(1)
+  added_at         DateTime          @default(now()) @db.Timestamptz(6)
+  bundles          bundles?          @relation(fields: [bundle_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  carts            carts             @relation(fields: [cart_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  product_variants product_variants? @relation(fields: [variant_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model carts {
+  id            BigInt       @id @default(autoincrement())
+  user_id       BigInt?
+  session_token String?      @db.VarChar(80)
+  coupon_id     BigInt?
+  created_at    DateTime     @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime     @default(now()) @db.Timestamptz(6)
+  expires_at    DateTime?    @db.Timestamptz(6)
+  cart_items    cart_items[]
+  coupons       coupons?     @relation(fields: [coupon_id], references: [id], onUpdate: NoAction)
+  users         users?       @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+model categories {
+  id                  BigInt                @id @default(autoincrement())
+  parent_id           BigInt?
+  name                String                @db.VarChar(120)
+  slug                String                @unique @db.VarChar(150)
+  description         String?
+  image_url           String?
+  sort_order          Int                   @default(0)
+  is_active           Boolean               @default(true)
+  created_at          DateTime              @default(now()) @db.Timestamptz(6)
+  updated_at          DateTime              @default(now()) @db.Timestamptz(6)
+  categories          categories?           @relation("categoriesTocategories", fields: [parent_id], references: [id], onUpdate: NoAction)
+  other_categories    categories[]          @relation("categoriesTocategories")
+  products            products[]
+  quiz_option_effects quiz_option_effects[]
+
+  @@index([parent_id], map: "idx_categories_parent")
+}
+
+model certifications {
+  id                     BigInt                   @id @default(autoincrement())
+  code                   String                   @unique @db.VarChar(40)
+  name                   String                   @db.VarChar(150)
+  issuer                 String?                  @db.VarChar(150)
+  description            String?
+  logo_url               String?
+  product_certifications product_certifications[]
+}
+
+model challenge_checkins {
+  id                BigInt          @id @default(autoincrement())
+  user_challenge_id BigInt
+  checkin_date      DateTime        @default(dbgenerated("CURRENT_DATE")) @db.Date
+  note              String?
+  user_challenges   user_challenges @relation(fields: [user_challenge_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([user_challenge_id, checkin_date])
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model challenges {
+  id              BigInt            @id @default(autoincrement())
+  name            String            @db.VarChar(150)
+  description     String?
+  duration_days   Int
+  points_reward   Int               @default(0)
+  badge_id        BigInt?
+  is_active       Boolean           @default(true)
+  badges          badges?           @relation(fields: [badge_id], references: [id], onUpdate: NoAction)
+  user_challenges user_challenges[]
+}
+
+model chat_messages {
+  id                      BigInt        @id @default(autoincrement())
+  session_id              BigInt
+  role                    chat_role
+  content                 String
+  recommended_product_ids BigInt[]
+  tokens_used             Int?
+  created_at              DateTime      @default(now()) @db.Timestamptz(6)
+  chat_sessions           chat_sessions @relation(fields: [session_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([session_id, created_at], map: "idx_chat_messages_session")
+}
+
+model chat_sessions {
+  id            BigInt          @id @default(autoincrement())
+  user_id       BigInt?
+  session_token String?         @db.VarChar(80)
+  title         String?         @db.VarChar(200)
+  created_at    DateTime        @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime        @default(now()) @db.Timestamptz(6)
+  chat_messages chat_messages[]
+  users         users?          @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([user_id], map: "idx_chat_sessions_user")
+}
+
+model contact_messages {
+  id          BigInt   @id @default(autoincrement())
+  user_id     BigInt?
+  name        String   @db.VarChar(150)
+  email       String   @db.Citext
+  subject     String?  @db.VarChar(200)
+  message     String
+  is_resolved Boolean  @default(false)
+  created_at  DateTime @default(now()) @db.Timestamptz(6)
+  users       users?   @relation(fields: [user_id], references: [id], onUpdate: NoAction)
+}
+
+model coupon_usages {
+  id              BigInt   @id @default(autoincrement())
+  coupon_id       BigInt
+  user_id         BigInt?
+  order_id        BigInt
+  discount_amount Decimal  @db.Decimal(14, 0)
+  used_at         DateTime @default(now()) @db.Timestamptz(6)
+  coupons         coupons  @relation(fields: [coupon_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  orders          orders   @relation(fields: [order_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users           users?   @relation(fields: [user_id], references: [id], onUpdate: NoAction)
+
+  @@unique([coupon_id, order_id])
+  @@index([coupon_id, user_id], map: "idx_coupon_usage_user")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model coupons {
+  id                   BigInt            @id @default(autoincrement())
+  code                 String            @unique @db.Citext
+  description          String?
+  discount_type        discount_type
+  discount_value       Decimal           @default(0) @db.Decimal(12, 2)
+  max_discount_amount  Decimal?          @db.Decimal(14, 0)
+  min_order_amount     Decimal           @default(0) @db.Decimal(14, 0)
+  usage_limit          Int?
+  usage_limit_per_user Int               @default(1)
+  used_count           Int               @default(0)
+  first_order_only     Boolean           @default(false)
+  min_tier_id          BigInt?
+  starts_at            DateTime          @default(now()) @db.Timestamptz(6)
+  ends_at              DateTime?         @db.Timestamptz(6)
+  is_active            Boolean           @default(true)
+  created_at           DateTime          @default(now()) @db.Timestamptz(6)
+  updated_at           DateTime          @default(now()) @db.Timestamptz(6)
+  carts                carts[]
+  coupon_usages        coupon_usages[]
+  membership_tiers     membership_tiers? @relation(fields: [min_tier_id], references: [id], onUpdate: NoAction)
+  orders               orders[]
+  referrals            referrals[]
+}
+
+model diets {
+  id                  BigInt                @id @default(autoincrement())
+  code                String                @unique @db.VarChar(40)
+  name_vi             String                @db.VarChar(100)
+  name_en             String?               @db.VarChar(100)
+  description         String?
+  icon_url            String?
+  product_diets       product_diets[]
+  quiz_option_effects quiz_option_effects[]
+  recipe_diets        recipe_diets[]
+  user_diets          user_diets[]
+}
+
+model farms {
+  id              BigInt            @id @default(autoincrement())
+  name            String            @db.VarChar(200)
+  owner_name      String?           @db.VarChar(150)
+  province        String?           @db.VarChar(100)
+  address         String?
+  description     String?
+  image_url       String?
+  latitude        Decimal?          @db.Decimal(9, 6)
+  longitude       Decimal?          @db.Decimal(9, 6)
+  created_at      DateTime          @default(now()) @db.Timestamptz(6)
+  product_batches product_batches[]
+  products        products[]
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model flash_sale_items {
+  id               BigInt           @id @default(autoincrement())
+  flash_sale_id    BigInt
+  variant_id       BigInt
+  sale_price       Decimal          @db.Decimal(14, 0)
+  quantity_limit   Int
+  sold_count       Int              @default(0)
+  flash_sales      flash_sales      @relation(fields: [flash_sale_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  product_variants product_variants @relation(fields: [variant_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([flash_sale_id, variant_id])
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model flash_sales {
+  id               BigInt             @id @default(autoincrement())
+  name             String             @db.VarChar(200)
+  starts_at        DateTime           @db.Timestamptz(6)
+  ends_at          DateTime           @db.Timestamptz(6)
+  is_active        Boolean            @default(true)
+  created_at       DateTime           @default(now()) @db.Timestamptz(6)
+  flash_sale_items flash_sale_items[]
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model food_diary {
+  id               BigInt    @id @default(autoincrement())
+  user_id          BigInt
+  logged_on        DateTime  @default(dbgenerated("CURRENT_DATE")) @db.Date
+  meal_type        meal_type
+  product_id       BigInt?
+  recipe_id        BigInt?
+  custom_food_name String?   @db.VarChar(200)
+  quantity_g       Decimal   @default(100) @db.Decimal(8, 1)
+  calories_kcal    Decimal   @default(0) @db.Decimal(7, 1)
+  protein_g        Decimal   @default(0) @db.Decimal(6, 1)
+  carbohydrate_g   Decimal   @default(0) @db.Decimal(6, 1)
+  fat_g            Decimal   @default(0) @db.Decimal(6, 1)
+  note             String?
+  created_at       DateTime  @default(now()) @db.Timestamptz(6)
+  products         products? @relation(fields: [product_id], references: [id], onUpdate: NoAction)
+  recipes          recipes?  @relation(fields: [recipe_id], references: [id], onUpdate: NoAction)
+  users            users     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([user_id, logged_on], map: "idx_food_diary_user_date")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model health_profiles {
+  user_id              BigInt         @id
+  height_cm            Decimal        @db.Decimal(5, 1)
+  weight_kg            Decimal        @db.Decimal(5, 1)
+  target_weight_kg     Decimal?       @db.Decimal(5, 1)
+  activity_level       activity_level @default(light)
+  goal                 goal_type      @default(maintain)
+  auto_calculate       Boolean        @default(true)
+  bmi                  Decimal?       @db.Decimal(4, 1)
+  bmr                  Decimal?       @db.Decimal(7, 0)
+  tdee                 Decimal?       @db.Decimal(7, 0)
+  daily_calorie_target Decimal?       @db.Decimal(7, 0)
+  daily_protein_g      Decimal?       @db.Decimal(6, 1)
+  daily_carb_g         Decimal?       @db.Decimal(6, 1)
+  daily_fat_g          Decimal?       @db.Decimal(6, 1)
+  daily_water_ml       Int            @default(2000)
+  medical_note         String?
+  updated_at           DateTime       @default(now()) @db.Timestamptz(6)
+  users                users          @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+model ingredients {
+  id                  BigInt                @id @default(autoincrement())
+  name                String                @unique @db.VarChar(150)
+  name_en             String?               @db.VarChar(150)
+  is_additive         Boolean               @default(false)
+  description         String?
+  product_ingredients product_ingredients[]
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model inventory {
+  id                BigInt          @id @default(autoincrement())
+  warehouse_id      BigInt
+  batch_id          BigInt
+  quantity_on_hand  Int             @default(0)
+  quantity_reserved Int             @default(0)
+  updated_at        DateTime        @default(now()) @db.Timestamptz(6)
+  product_batches   product_batches @relation(fields: [batch_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  warehouses        warehouses      @relation(fields: [warehouse_id], references: [id], onUpdate: NoAction)
+
+  @@unique([warehouse_id, batch_id])
+  @@index([batch_id], map: "idx_inventory_batch")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model loyalty_accounts {
+  user_id          BigInt            @id
+  points_balance   Int               @default(0)
+  lifetime_points  Int               @default(0)
+  tier_id          BigInt?
+  updated_at       DateTime          @default(now()) @db.Timestamptz(6)
+  membership_tiers membership_tiers? @relation(fields: [tier_id], references: [id], onUpdate: NoAction)
+  users            users             @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model loyalty_transactions {
+  id          BigInt           @id @default(autoincrement())
+  user_id     BigInt
+  txn_type    loyalty_txn_type
+  points      Int
+  order_id    BigInt?
+  description String?          @db.VarChar(255)
+  expires_at  DateTime?        @db.Timestamptz(6)
+  created_at  DateTime         @default(now()) @db.Timestamptz(6)
+  orders      orders?          @relation(fields: [order_id], references: [id], onUpdate: NoAction)
+  users       users            @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([user_id, created_at(sort: Desc)], map: "idx_loyalty_txn_user")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model meal_plan_items {
+  id           BigInt     @id @default(autoincrement())
+  meal_plan_id BigInt
+  day_number   Int
+  meal_type    meal_type
+  product_id   BigInt?
+  recipe_id    BigInt?
+  quantity     Decimal    @default(1) @db.Decimal(6, 2)
+  note         String?    @db.VarChar(255)
+  meal_plans   meal_plans @relation(fields: [meal_plan_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  products     products?  @relation(fields: [product_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  recipes      recipes?   @relation(fields: [recipe_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([meal_plan_id, day_number], map: "idx_meal_items_plan")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model meal_plans {
+  id              BigInt            @id @default(autoincrement())
+  owner_user_id   BigInt?
+  name            String            @db.VarChar(200)
+  slug            String?           @unique @db.VarChar(240)
+  description     String?
+  goal            goal_type?
+  duration_days   Int
+  target_calories Decimal?          @db.Decimal(7, 0)
+  image_url       String?
+  is_template     Boolean           @default(true)
+  is_published    Boolean           @default(false)
+  created_at      DateTime          @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime          @default(now()) @db.Timestamptz(6)
+  meal_plan_items meal_plan_items[]
+  users           users?            @relation(fields: [owner_user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  user_meal_plans user_meal_plans[]
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model membership_tiers {
+  id                BigInt             @id @default(autoincrement())
+  code              String             @unique @db.VarChar(20)
+  name              String             @db.VarChar(60)
+  min_points        Int                @unique
+  discount_percent  Decimal            @default(0) @db.Decimal(4, 1)
+  points_multiplier Decimal            @default(1) @db.Decimal(3, 1)
+  benefits          Json               @default("{}")
+  coupons           coupons[]
+  loyalty_accounts  loyalty_accounts[]
+}
+
+model notification_preferences {
+  user_id          BigInt   @id
+  email_order      Boolean  @default(true)
+  email_promo      Boolean  @default(true)
+  push_enabled     Boolean  @default(true)
+  zalo_enabled     Boolean  @default(false)
+  reorder_reminder Boolean  @default(true)
+  updated_at       DateTime @default(now()) @db.Timestamptz(6)
+  users            users    @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+model notifications {
+  id         BigInt            @id @default(autoincrement())
+  user_id    BigInt
+  type       notification_type
+  title      String            @db.VarChar(200)
+  body       String?
+  data       Json              @default("{}")
+  is_read    Boolean           @default(false)
+  read_at    DateTime?         @db.Timestamptz(6)
+  created_at DateTime          @default(now()) @db.Timestamptz(6)
+  users      users             @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([user_id, is_read, created_at(sort: Desc)], map: "idx_notifications_user")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model nutrition_facts {
+  product_id        BigInt   @id
+  serving_size_g    Decimal? @db.Decimal(7, 1)
+  servings_per_pack Decimal? @db.Decimal(5, 1)
+  calories_kcal     Decimal  @db.Decimal(7, 1)
+  protein_g         Decimal  @default(0) @db.Decimal(6, 2)
+  carbohydrate_g    Decimal  @default(0) @db.Decimal(6, 2)
+  sugar_g           Decimal  @default(0) @db.Decimal(6, 2)
+  added_sugar_g     Decimal  @default(0) @db.Decimal(6, 2)
+  fiber_g           Decimal  @default(0) @db.Decimal(6, 2)
+  fat_g             Decimal  @default(0) @db.Decimal(6, 2)
+  saturated_fat_g   Decimal  @default(0) @db.Decimal(6, 2)
+  trans_fat_g       Decimal  @default(0) @db.Decimal(6, 2)
+  cholesterol_mg    Decimal  @default(0) @db.Decimal(7, 1)
+  sodium_mg         Decimal  @default(0) @db.Decimal(8, 1)
+  potassium_mg      Decimal? @db.Decimal(8, 1)
+  calcium_mg        Decimal? @db.Decimal(8, 1)
+  iron_mg           Decimal? @db.Decimal(6, 2)
+  vitamin_a_mcg     Decimal? @db.Decimal(8, 1)
+  vitamin_c_mg      Decimal? @db.Decimal(7, 1)
+  fruit_veg_percent Decimal  @default(0) @db.Decimal(5, 1)
+  glycemic_index    Int?     @db.SmallInt
+  updated_at        DateTime @default(now()) @db.Timestamptz(6)
+  products          products @relation(fields: [product_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model oauth_accounts {
+  id               BigInt   @id @default(autoincrement())
+  user_id          BigInt
+  provider         String   @db.VarChar(20)
+  provider_user_id String   @db.VarChar(191)
+  created_at       DateTime @default(now()) @db.Timestamptz(6)
+  users            users    @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([provider, provider_user_id])
+  @@index([user_id], map: "idx_oauth_user")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model order_items {
+  id               BigInt            @id @default(autoincrement())
+  order_id         BigInt
+  product_id       BigInt?
+  variant_id       BigInt?
+  bundle_id        BigInt?
+  batch_id         BigInt?
+  product_name     String            @db.VarChar(255)
+  variant_name     String?           @db.VarChar(150)
+  sku              String?           @db.VarChar(60)
+  unit_price       Decimal           @db.Decimal(14, 0)
+  quantity         Int
+  discount_amount  Decimal           @default(0) @db.Decimal(14, 0)
+  line_total       Decimal           @db.Decimal(14, 0)
+  calories_kcal    Decimal?          @db.Decimal(8, 1)
+  product_batches  product_batches?  @relation(fields: [batch_id], references: [id], onUpdate: NoAction)
+  bundles          bundles?          @relation(fields: [bundle_id], references: [id], onUpdate: NoAction)
+  orders           orders            @relation(fields: [order_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  products         products?         @relation(fields: [product_id], references: [id], onUpdate: NoAction)
+  product_variants product_variants? @relation(fields: [variant_id], references: [id], onUpdate: NoAction)
+  return_items     return_items[]
+  reviews          reviews[]
+
+  @@index([order_id], map: "idx_order_items_order")
+  @@index([product_id], map: "idx_order_items_product")
+  @@index([variant_id], map: "idx_order_items_variant")
+}
+
+model order_status_history {
+  id          BigInt        @id @default(autoincrement())
+  order_id    BigInt
+  from_status order_status?
+  to_status   order_status
+  changed_by  BigInt?
+  note        String?
+  changed_at  DateTime      @default(now()) @db.Timestamptz(6)
+  users       users?        @relation(fields: [changed_by], references: [id], onUpdate: NoAction)
+  orders      orders        @relation(fields: [order_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([order_id, changed_at], map: "idx_order_hist_order")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model orders {
+  id                   BigInt                 @id @default(autoincrement())
+  order_number         String                 @unique @default(dbgenerated("fn_generate_order_number()")) @db.VarChar(20)
+  user_id              BigInt?
+  guest_email          String?                @db.Citext
+  guest_phone          String?                @db.VarChar(20)
+  subscription_id      BigInt?
+  status               order_status           @default(pending)
+  payment_status       payment_status         @default(unpaid)
+  payment_method       payment_method         @default(cod)
+  shipping_method_id   BigInt?
+  address_id           BigInt?
+  ship_recipient_name  String                 @db.VarChar(150)
+  ship_phone           String                 @db.VarChar(20)
+  ship_province        String                 @db.VarChar(100)
+  ship_district        String                 @db.VarChar(100)
+  ship_ward            String                 @db.VarChar(100)
+  ship_street          String                 @db.VarChar(255)
+  ship_note            String?
+  delivery_slot_from   DateTime?              @db.Timestamptz(6)
+  delivery_slot_to     DateTime?              @db.Timestamptz(6)
+  subtotal             Decimal                @db.Decimal(14, 0)
+  coupon_id            BigInt?
+  coupon_code          String?                @db.VarChar(40)
+  discount_amount      Decimal                @default(0) @db.Decimal(14, 0)
+  points_used          Int                    @default(0)
+  points_discount      Decimal                @default(0) @db.Decimal(14, 0)
+  shipping_fee         Decimal                @default(0) @db.Decimal(14, 0)
+  tax_amount           Decimal                @default(0) @db.Decimal(14, 0)
+  total_amount         Decimal                @db.Decimal(14, 0)
+  points_earned        Int                    @default(0)
+  note                 String?
+  cancel_reason        String?
+  placed_at            DateTime               @default(now()) @db.Timestamptz(6)
+  confirmed_at         DateTime?              @db.Timestamptz(6)
+  shipped_at           DateTime?              @db.Timestamptz(6)
+  delivered_at         DateTime?              @db.Timestamptz(6)
+  completed_at         DateTime?              @db.Timestamptz(6)
+  cancelled_at         DateTime?              @db.Timestamptz(6)
+  created_at           DateTime               @default(now()) @db.Timestamptz(6)
+  updated_at           DateTime               @default(now()) @db.Timestamptz(6)
+  coupon_usages        coupon_usages[]
+  loyalty_transactions loyalty_transactions[]
+  order_items          order_items[]
+  order_status_history order_status_history[]
+  addresses            addresses?             @relation(fields: [address_id], references: [id], onUpdate: NoAction)
+  coupons              coupons?               @relation(fields: [coupon_id], references: [id], onUpdate: NoAction)
+  shipping_methods     shipping_methods?      @relation(fields: [shipping_method_id], references: [id], onUpdate: NoAction)
+  subscriptions        subscriptions?         @relation(fields: [subscription_id], references: [id], onUpdate: NoAction)
+  users                users?                 @relation(fields: [user_id], references: [id], onUpdate: NoAction)
+  payments             payments[]
+  returns              returns[]
+  shipments            shipments[]
+
+  @@index([placed_at], map: "idx_orders_placed")
+  @@index([status, placed_at(sort: Desc)], map: "idx_orders_status")
+  @@index([subscription_id], map: "idx_orders_subs")
+  @@index([user_id, placed_at(sort: Desc)], map: "idx_orders_user")
+}
+
+model payment_transactions {
+  id               BigInt   @id @default(autoincrement())
+  payment_id       BigInt
+  gateway          String   @db.VarChar(30)
+  txn_ref          String?  @db.VarChar(100)
+  status           String?  @db.VarChar(30)
+  request_payload  Json?
+  response_payload Json?
+  created_at       DateTime @default(now()) @db.Timestamptz(6)
+  payments         payments @relation(fields: [payment_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([payment_id], map: "idx_pay_txn_payment")
+}
+
+model payments {
+  id                   BigInt                 @id @default(autoincrement())
+  order_id             BigInt
+  method               payment_method
+  status               payment_status         @default(pending)
+  amount               Decimal                @db.Decimal(14, 0)
+  currency             String                 @default("VND") @db.Char(3)
+  provider_txn_id      String?                @db.VarChar(100)
+  paid_at              DateTime?              @db.Timestamptz(6)
+  created_at           DateTime               @default(now()) @db.Timestamptz(6)
+  updated_at           DateTime               @default(now()) @db.Timestamptz(6)
+  payment_transactions payment_transactions[]
+  orders               orders                 @relation(fields: [order_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  refunds              refunds[]
+
+  @@index([order_id], map: "idx_payments_order")
+}
+
+model permissions {
+  id               BigInt             @id @default(autoincrement())
+  code             String             @unique @db.VarChar(80)
+  description      String?
+  role_permissions role_permissions[]
+}
+
+model product_alerts {
+  id           BigInt     @id @default(autoincrement())
+  user_id      BigInt
+  product_id   BigInt
+  alert_type   alert_type
+  target_price Decimal?   @db.Decimal(14, 0)
+  is_active    Boolean    @default(true)
+  notified_at  DateTime?  @db.Timestamptz(6)
+  created_at   DateTime   @default(now()) @db.Timestamptz(6)
+  products     products   @relation(fields: [product_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users        users      @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([user_id, product_id, alert_type])
+}
+
+model product_allergens {
+  product_id  BigInt
+  allergen_id BigInt
+  relation    allergen_relation @default(contains)
+  allergens   allergens         @relation(fields: [allergen_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  products    products          @relation(fields: [product_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([product_id, allergen_id])
+  @@index([allergen_id], map: "idx_prod_allergen_allergen")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model product_batches {
+  id                BigInt            @id @default(autoincrement())
+  variant_id        BigInt
+  farm_id           BigInt?
+  supplier_id       BigInt?
+  batch_code        String            @unique @db.VarChar(60)
+  qr_code           String            @unique @db.VarChar(80)
+  harvested_on      DateTime?         @db.Date
+  manufactured_on   DateTime?         @db.Date
+  expires_on        DateTime?         @db.Date
+  received_on       DateTime          @default(dbgenerated("CURRENT_DATE")) @db.Date
+  quantity_received Int
+  unit_cost         Decimal?          @db.Decimal(14, 0)
+  lab_test_url      String?
+  lab_result_note   String?
+  created_at        DateTime          @default(now()) @db.Timestamptz(6)
+  inventory         inventory[]
+  order_items       order_items[]
+  farms             farms?            @relation(fields: [farm_id], references: [id], onUpdate: NoAction)
+  suppliers         suppliers?        @relation(fields: [supplier_id], references: [id], onUpdate: NoAction)
+  product_variants  product_variants  @relation(fields: [variant_id], references: [id], onUpdate: NoAction)
+  stock_movements   stock_movements[]
+
+  @@index([expires_on], map: "idx_batches_expiry")
+  @@index([variant_id], map: "idx_batches_variant")
+}
+
+model product_certifications {
+  product_id         BigInt
+  certification_id   BigInt
+  certificate_number String?        @db.VarChar(80)
+  issued_on          DateTime?      @db.Date
+  expires_on         DateTime?      @db.Date
+  document_url       String?
+  certifications     certifications @relation(fields: [certification_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  products           products       @relation(fields: [product_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([product_id, certification_id])
+}
+
+model product_diets {
+  product_id BigInt
+  diet_id    BigInt
+  diets      diets    @relation(fields: [diet_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  products   products @relation(fields: [product_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([product_id, diet_id])
+  @@index([diet_id], map: "idx_prod_diet_diet")
+}
+
+model product_images {
+  id               BigInt            @id @default(autoincrement())
+  product_id       BigInt
+  variant_id       BigInt?
+  url              String
+  alt_text         String?           @db.VarChar(255)
+  sort_order       Int               @default(0)
+  is_primary       Boolean           @default(false)
+  products         products          @relation(fields: [product_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  product_variants product_variants? @relation(fields: [variant_id], references: [id], onUpdate: NoAction)
+
+  @@index([product_id], map: "idx_images_product")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model product_ingredients {
+  product_id    BigInt
+  ingredient_id BigInt
+  percentage    Decimal?    @db.Decimal(5, 2)
+  sort_order    Int         @default(0)
+  ingredients   ingredients @relation(fields: [ingredient_id], references: [id], onUpdate: NoAction)
+  products      products    @relation(fields: [product_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([product_id, ingredient_id])
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model product_substitutes {
+  product_id                                           BigInt
+  substitute_id                                        BigInt
+  reason                                               String?  @db.VarChar(200)
+  priority                                             Int      @default(1) @db.SmallInt
+  products_product_substitutes_product_idToproducts    products @relation("product_substitutes_product_idToproducts", fields: [product_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  products_product_substitutes_substitute_idToproducts products @relation("product_substitutes_substitute_idToproducts", fields: [substitute_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([product_id, substitute_id])
+}
+
+model product_tags {
+  product_id BigInt
+  tag_id     BigInt
+  products   products @relation(fields: [product_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  tags       tags     @relation(fields: [tag_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([product_id, tag_id])
+  @@index([tag_id], map: "idx_prod_tag_tag")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model product_variants {
+  id                    BigInt                  @id @default(autoincrement())
+  product_id            BigInt
+  sku                   String                  @unique @db.VarChar(60)
+  barcode               String?                 @unique @db.VarChar(32)
+  name                  String                  @db.VarChar(150)
+  net_weight_g          Decimal                 @db.Decimal(8, 1)
+  unit_label            String?                 @default("gói") @db.VarChar(30)
+  price                 Decimal                 @db.Decimal(14, 0)
+  compare_at_price      Decimal?                @db.Decimal(14, 0)
+  cost_price            Decimal?                @db.Decimal(14, 0)
+  reorder_level         Int                     @default(10)
+  is_default            Boolean                 @default(false)
+  is_active             Boolean                 @default(true)
+  created_at            DateTime                @default(now()) @db.Timestamptz(6)
+  updated_at            DateTime                @default(now()) @db.Timestamptz(6)
+  bundle_items          bundle_items[]
+  cart_items            cart_items[]
+  flash_sale_items      flash_sale_items[]
+  order_items           order_items[]
+  product_batches       product_batches[]
+  product_images        product_images[]
+  products              products                @relation(fields: [product_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  recipe_ingredients    recipe_ingredients[]
+  subscription_items    subscription_items[]
+  variant_price_history variant_price_history[]
+
+  @@index([product_id], map: "idx_variants_product")
+}
+
+model product_views {
+  id            BigInt   @id @default(autoincrement())
+  product_id    BigInt
+  user_id       BigInt?
+  session_token String?  @db.VarChar(80)
+  viewed_at     DateTime @default(now()) @db.Timestamptz(6)
+  products      products @relation(fields: [product_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users         users?   @relation(fields: [user_id], references: [id], onUpdate: NoAction)
+
+  @@index([product_id, viewed_at(sort: Desc)], map: "idx_product_views_p")
+  @@index([user_id, viewed_at(sort: Desc)], map: "idx_product_views_u")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains an expression index which requires additional setup for migrations. Visit https://pris.ly/d/expression-indexes for more info.
+model products {
+  id                                                              BigInt                   @id @default(autoincrement())
+  category_id                                                     BigInt
+  brand_id                                                        BigInt?
+  supplier_id                                                     BigInt?
+  farm_id                                                         BigInt?
+  name                                                            String                   @db.VarChar(255)
+  slug                                                            String                   @unique @db.VarChar(280)
+  short_description                                               String?                  @db.VarChar(500)
+  description                                                     String?
+  origin_country                                                  String?                  @default("Việt Nam") @db.VarChar(80)
+  storage_instruction                                             String?
+  usage_instruction                                               String?
+  shelf_life_days                                                 Int?
+  status                                                          product_status           @default(draft)
+  is_featured                                                     Boolean                  @default(false)
+  nutri_score_points                                              Int?
+  nutri_score_grade                                               String?                  @db.Char(1)
+  avg_rating                                                      Decimal                  @default(0) @db.Decimal(3, 2)
+  review_count                                                    Int                      @default(0)
+  sold_count                                                      Int                      @default(0)
+  view_count                                                      Int                      @default(0)
+  meta_title                                                      String?                  @db.VarChar(200)
+  meta_description                                                String?                  @db.VarChar(320)
+  search_vector                                                   Unsupported("tsvector")?
+  created_at                                                      DateTime                 @default(now()) @db.Timestamptz(6)
+  updated_at                                                      DateTime                 @default(now()) @db.Timestamptz(6)
+  deleted_at                                                      DateTime?                @db.Timestamptz(6)
+  food_diary                                                      food_diary[]
+  meal_plan_items                                                 meal_plan_items[]
+  nutrition_facts                                                 nutrition_facts?
+  order_items                                                     order_items[]
+  product_alerts                                                  product_alerts[]
+  product_allergens                                               product_allergens[]
+  product_certifications                                          product_certifications[]
+  product_diets                                                   product_diets[]
+  product_images                                                  product_images[]
+  product_ingredients                                             product_ingredients[]
+  product_substitutes_product_substitutes_product_idToproducts    product_substitutes[]    @relation("product_substitutes_product_idToproducts")
+  product_substitutes_product_substitutes_substitute_idToproducts product_substitutes[]    @relation("product_substitutes_substitute_idToproducts")
+  product_tags                                                    product_tags[]
+  product_variants                                                product_variants[]
+  product_views                                                   product_views[]
+  brands                                                          brands?                  @relation(fields: [brand_id], references: [id], onUpdate: NoAction)
+  categories                                                      categories               @relation(fields: [category_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  farms                                                           farms?                   @relation(fields: [farm_id], references: [id], onUpdate: NoAction)
+  suppliers                                                       suppliers?               @relation(fields: [supplier_id], references: [id], onUpdate: NoAction)
+  quiz_recommendations                                            quiz_recommendations[]
+  recipe_ingredients                                              recipe_ingredients[]
+  reviews                                                         reviews[]
+  wishlists                                                       wishlists[]
+
+  @@index([brand_id], map: "idx_products_brand")
+  @@index([category_id], map: "idx_products_category")
+  @@index([search_vector], map: "idx_products_search", type: Gin)
+}
+
+model quiz_answers {
+  id             BigInt         @id @default(autoincrement())
+  session_id     BigInt
+  question_id    BigInt
+  option_id      BigInt
+  quiz_options   quiz_options   @relation(fields: [option_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  quiz_questions quiz_questions @relation(fields: [question_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  quiz_sessions  quiz_sessions  @relation(fields: [session_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([session_id, option_id])
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model quiz_option_effects {
+  id           BigInt       @id @default(autoincrement())
+  option_id    BigInt
+  effect_type  String       @db.VarChar(20)
+  diet_id      BigInt?
+  tag_id       BigInt?
+  category_id  BigInt?
+  allergen_id  BigInt?
+  weight       Int          @default(1)
+  allergens    allergens?   @relation(fields: [allergen_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  categories   categories?  @relation(fields: [category_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  diets        diets?       @relation(fields: [diet_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  quiz_options quiz_options @relation(fields: [option_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  tags         tags?        @relation(fields: [tag_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([option_id], map: "idx_quiz_effects_option")
+}
+
+model quiz_options {
+  id                  BigInt                @id @default(autoincrement())
+  question_id         BigInt
+  option_text         String                @db.VarChar(200)
+  icon                String?               @db.VarChar(60)
+  sort_order          Int                   @default(0)
+  quiz_answers        quiz_answers[]
+  quiz_option_effects quiz_option_effects[]
+  quiz_questions      quiz_questions        @relation(fields: [question_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([question_id], map: "idx_quiz_options_q")
+}
+
+model quiz_questions {
+  id            BigInt         @id @default(autoincrement())
+  question_text String         @db.VarChar(300)
+  is_multiple   Boolean        @default(false)
+  sort_order    Int            @default(0)
+  is_active     Boolean        @default(true)
+  quiz_answers  quiz_answers[]
+  quiz_options  quiz_options[]
+}
+
+model quiz_recommendations {
+  id            BigInt        @id @default(autoincrement())
+  session_id    BigInt
+  product_id    BigInt
+  score         Int
+  rank          Int
+  products      products      @relation(fields: [product_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  quiz_sessions quiz_sessions @relation(fields: [session_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([session_id, product_id])
+}
+
+model quiz_sessions {
+  id                   BigInt                 @id @default(autoincrement())
+  user_id              BigInt?
+  session_token        String?                @db.VarChar(80)
+  started_at           DateTime               @default(now()) @db.Timestamptz(6)
+  completed_at         DateTime?              @db.Timestamptz(6)
+  quiz_answers         quiz_answers[]
+  quiz_recommendations quiz_recommendations[]
+  users                users?                 @relation(fields: [user_id], references: [id], onUpdate: NoAction)
+}
+
+model recipe_diets {
+  recipe_id BigInt
+  diet_id   BigInt
+  diets     diets   @relation(fields: [diet_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  recipes   recipes @relation(fields: [recipe_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([recipe_id, diet_id])
+}
+
+model recipe_favorites {
+  user_id    BigInt
+  recipe_id  BigInt
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  recipes    recipes  @relation(fields: [recipe_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users      users    @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([user_id, recipe_id])
+}
+
+model recipe_ingredients {
+  id               BigInt            @id @default(autoincrement())
+  recipe_id        BigInt
+  product_id       BigInt?
+  variant_id       BigInt?
+  ingredient_name  String            @db.VarChar(150)
+  quantity         Decimal?          @db.Decimal(8, 2)
+  unit             String?           @db.VarChar(30)
+  note             String?           @db.VarChar(200)
+  sort_order       Int               @default(0)
+  products         products?         @relation(fields: [product_id], references: [id], onUpdate: NoAction)
+  recipes          recipes           @relation(fields: [recipe_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  product_variants product_variants? @relation(fields: [variant_id], references: [id], onUpdate: NoAction)
+
+  @@index([product_id], map: "idx_recipe_ing_product")
+  @@index([recipe_id], map: "idx_recipe_ing_recipe")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model recipe_steps {
+  id          BigInt  @id @default(autoincrement())
+  recipe_id   BigInt
+  step_number Int
+  instruction String
+  image_url   String?
+  recipes     recipes @relation(fields: [recipe_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([recipe_id, step_number])
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model recipes {
+  id                   BigInt               @id @default(autoincrement())
+  author_id            BigInt?
+  title                String               @db.VarChar(255)
+  slug                 String               @unique @db.VarChar(280)
+  description          String?
+  image_url            String?
+  video_url            String?
+  prep_minutes         Int?
+  cook_minutes         Int?
+  servings             Int                  @default(1)
+  difficulty           difficulty_level     @default(easy)
+  calories_per_serving Decimal?             @db.Decimal(7, 1)
+  protein_g            Decimal?             @db.Decimal(6, 1)
+  carbohydrate_g       Decimal?             @db.Decimal(6, 1)
+  fat_g                Decimal?             @db.Decimal(6, 1)
+  is_published         Boolean              @default(false)
+  view_count           Int                  @default(0)
+  created_at           DateTime             @default(now()) @db.Timestamptz(6)
+  updated_at           DateTime             @default(now()) @db.Timestamptz(6)
+  food_diary           food_diary[]
+  meal_plan_items      meal_plan_items[]
+  recipe_diets         recipe_diets[]
+  recipe_favorites     recipe_favorites[]
+  recipe_ingredients   recipe_ingredients[]
+  recipe_steps         recipe_steps[]
+  users                users?               @relation(fields: [author_id], references: [id], onUpdate: NoAction)
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model referrals {
+  id                                 BigInt    @id @default(autoincrement())
+  referrer_id                        BigInt
+  referee_id                         BigInt    @unique
+  reward_coupon_id                   BigInt?
+  is_rewarded                        Boolean   @default(false)
+  rewarded_at                        DateTime? @db.Timestamptz(6)
+  created_at                         DateTime  @default(now()) @db.Timestamptz(6)
+  users_referrals_referee_idTousers  users     @relation("referrals_referee_idTousers", fields: [referee_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users_referrals_referrer_idTousers users     @relation("referrals_referrer_idTousers", fields: [referrer_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  coupons                            coupons?  @relation(fields: [reward_coupon_id], references: [id], onUpdate: NoAction)
+}
+
+model refunds {
+  id           BigInt        @id @default(autoincrement())
+  payment_id   BigInt
+  return_id    BigInt?
+  amount       Decimal       @db.Decimal(14, 0)
+  status       refund_status @default(pending)
+  note         String?
+  processed_at DateTime?     @db.Timestamptz(6)
+  created_at   DateTime      @default(now()) @db.Timestamptz(6)
+  payments     payments      @relation(fields: [payment_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  returns      returns?      @relation(fields: [return_id], references: [id], onUpdate: NoAction)
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model return_items {
+  id            BigInt      @id @default(autoincrement())
+  return_id     BigInt
+  order_item_id BigInt
+  quantity      Int
+  reason        String?     @db.VarChar(200)
+  order_items   order_items @relation(fields: [order_item_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  returns       returns     @relation(fields: [return_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+model returns {
+  id            BigInt         @id @default(autoincrement())
+  order_id      BigInt
+  user_id       BigInt?
+  status        return_status  @default(requested)
+  reason        String         @db.VarChar(200)
+  description   String?
+  refund_amount Decimal        @default(0) @db.Decimal(14, 0)
+  created_at    DateTime       @default(now()) @db.Timestamptz(6)
+  resolved_at   DateTime?      @db.Timestamptz(6)
+  refunds       refunds[]
+  return_items  return_items[]
+  orders        orders         @relation(fields: [order_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users         users?         @relation(fields: [user_id], references: [id], onUpdate: NoAction)
+
+  @@index([order_id], map: "idx_returns_order")
+}
+
+model review_media {
+  id         BigInt     @id @default(autoincrement())
+  review_id  BigInt
+  media_type media_type @default(image)
+  url        String
+  reviews    reviews    @relation(fields: [review_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([review_id], map: "idx_review_media")
+}
+
+model review_votes {
+  review_id  BigInt
+  user_id    BigInt
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  reviews    reviews  @relation(fields: [review_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users      users    @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([review_id, user_id])
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model reviews {
+  id                   BigInt         @id @default(autoincrement())
+  product_id           BigInt
+  user_id              BigInt
+  order_item_id        BigInt?
+  rating               Int            @db.SmallInt
+  title                String?        @db.VarChar(200)
+  content              String?
+  is_verified_purchase Boolean        @default(false)
+  status               review_status  @default(pending)
+  helpful_count        Int            @default(0)
+  admin_reply          String?
+  replied_at           DateTime?      @db.Timestamptz(6)
+  created_at           DateTime       @default(now()) @db.Timestamptz(6)
+  updated_at           DateTime       @default(now()) @db.Timestamptz(6)
+  review_media         review_media[]
+  review_votes         review_votes[]
+  order_items          order_items?   @relation(fields: [order_item_id], references: [id], onUpdate: NoAction)
+  products             products       @relation(fields: [product_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users                users          @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([user_id, order_item_id])
+  @@index([product_id, status, created_at(sort: Desc)], map: "idx_reviews_product")
+}
+
+model role_permissions {
+  role_id       BigInt
+  permission_id BigInt
+  permissions   permissions @relation(fields: [permission_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  roles         roles       @relation(fields: [role_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([role_id, permission_id])
+}
+
+model roles {
+  id               BigInt             @id @default(autoincrement())
+  code             String             @unique @db.VarChar(40)
+  name             String             @db.VarChar(100)
+  description      String?
+  role_permissions role_permissions[]
+  user_roles       user_roles[]
+}
+
+model search_logs {
+  id           BigInt   @id @default(autoincrement())
+  user_id      BigInt?
+  query        String   @db.VarChar(300)
+  result_count Int?
+  created_at   DateTime @default(now()) @db.Timestamptz(6)
+  users        users?   @relation(fields: [user_id], references: [id], onUpdate: NoAction)
+
+  @@index([created_at(sort: Desc)], map: "idx_search_logs_q")
+}
+
+model settings {
+  key         String   @id @db.VarChar(80)
+  value       Json
+  description String?
+  updated_at  DateTime @default(now()) @db.Timestamptz(6)
+}
+
+model shipment_events {
+  id          BigInt          @id @default(autoincrement())
+  shipment_id BigInt
+  status      shipment_status
+  location    String?         @db.VarChar(200)
+  description String?
+  occurred_at DateTime        @default(now()) @db.Timestamptz(6)
+  shipments   shipments       @relation(fields: [shipment_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([shipment_id, occurred_at], map: "idx_ship_events")
+}
+
+model shipments {
+  id                    BigInt            @id @default(autoincrement())
+  order_id              BigInt
+  carrier               String?           @db.VarChar(60)
+  tracking_number       String?           @db.VarChar(80)
+  status                shipment_status   @default(pending)
+  shipping_fee          Decimal           @default(0) @db.Decimal(14, 0)
+  cod_amount            Decimal           @default(0) @db.Decimal(14, 0)
+  picked_up_at          DateTime?         @db.Timestamptz(6)
+  estimated_delivery_at DateTime?         @db.Timestamptz(6)
+  delivered_at          DateTime?         @db.Timestamptz(6)
+  created_at            DateTime          @default(now()) @db.Timestamptz(6)
+  updated_at            DateTime          @default(now()) @db.Timestamptz(6)
+  shipment_events       shipment_events[]
+  orders                orders            @relation(fields: [order_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([order_id], map: "idx_shipments_order")
+  @@index([tracking_number], map: "idx_shipments_tracking")
+}
+
+model shipping_methods {
+  id                  BigInt   @id @default(autoincrement())
+  code                String   @unique @db.VarChar(30)
+  name                String   @db.VarChar(120)
+  carrier             String?  @db.VarChar(60)
+  base_fee            Decimal  @default(0) @db.Decimal(14, 0)
+  free_ship_threshold Decimal? @db.Decimal(14, 0)
+  est_hours_min       Int?
+  est_hours_max       Int?
+  is_cold_chain       Boolean  @default(false)
+  is_active           Boolean  @default(true)
+  orders              orders[]
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model stock_movements {
+  id              BigInt          @id @default(autoincrement())
+  batch_id        BigInt
+  warehouse_id    BigInt
+  movement_type   movement_type
+  quantity        Int
+  reference_type  String?         @db.VarChar(30)
+  reference_id    BigInt?
+  note            String?
+  created_by      BigInt?
+  created_at      DateTime        @default(now()) @db.Timestamptz(6)
+  product_batches product_batches @relation(fields: [batch_id], references: [id], onUpdate: NoAction)
+  users           users?          @relation(fields: [created_by], references: [id], onUpdate: NoAction)
+  warehouses      warehouses      @relation(fields: [warehouse_id], references: [id], onUpdate: NoAction)
+
+  @@index([batch_id, created_at(sort: Desc)], map: "idx_movements_batch")
+  @@index([reference_type, reference_id], map: "idx_movements_ref")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model subscription_items {
+  id               BigInt           @id @default(autoincrement())
+  subscription_id  BigInt
+  variant_id       BigInt
+  quantity         Int              @default(1)
+  subscriptions    subscriptions    @relation(fields: [subscription_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  product_variants product_variants @relation(fields: [variant_id], references: [id], onUpdate: NoAction)
+
+  @@unique([subscription_id, variant_id])
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model subscription_plans {
+  id               BigInt            @id @default(autoincrement())
+  name             String            @db.VarChar(120)
+  frequency        subscription_freq
+  discount_percent Decimal           @default(0) @db.Decimal(4, 1)
+  description      String?
+  is_active        Boolean           @default(true)
+  subscriptions    subscriptions[]
+}
+
+model subscription_skips {
+  id              BigInt        @id @default(autoincrement())
+  subscription_id BigInt
+  skip_date       DateTime      @db.Date
+  reason          String?
+  subscriptions   subscriptions @relation(fields: [subscription_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([subscription_id, skip_date])
+}
+
+model subscriptions {
+  id                 BigInt               @id @default(autoincrement())
+  user_id            BigInt
+  plan_id            BigInt
+  address_id         BigInt?
+  payment_method     payment_method       @default(cod)
+  status             subscription_status  @default(active)
+  next_delivery_date DateTime             @db.Date
+  last_delivery_date DateTime?            @db.Date
+  paused_until       DateTime?            @db.Date
+  cancelled_at       DateTime?            @db.Timestamptz(6)
+  cancel_reason      String?
+  created_at         DateTime             @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime             @default(now()) @db.Timestamptz(6)
+  orders             orders[]
+  subscription_items subscription_items[]
+  subscription_skips subscription_skips[]
+  addresses          addresses?           @relation(fields: [address_id], references: [id], onUpdate: NoAction)
+  subscription_plans subscription_plans   @relation(fields: [plan_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users              users                @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([user_id], map: "idx_subs_user")
+}
+
+model suppliers {
+  id              BigInt            @id @default(autoincrement())
+  name            String            @db.VarChar(200)
+  contact_name    String?           @db.VarChar(150)
+  phone           String?           @db.VarChar(20)
+  email           String?           @db.Citext
+  address         String?
+  tax_code        String?           @db.VarChar(20)
+  is_active       Boolean           @default(true)
+  created_at      DateTime          @default(now()) @db.Timestamptz(6)
+  product_batches product_batches[]
+  products        products[]
+}
+
+model tags {
+  id                  BigInt                @id @default(autoincrement())
+  name                String                @db.VarChar(80)
+  slug                String                @unique @db.VarChar(100)
+  blog_post_tags      blog_post_tags[]
+  product_tags        product_tags[]
+  quiz_option_effects quiz_option_effects[]
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model user_allergens {
+  user_id     BigInt
+  allergen_id BigInt
+  severity    Int       @default(2) @db.SmallInt
+  allergens   allergens @relation(fields: [allergen_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users       users     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([user_id, allergen_id])
+}
+
+model user_badges {
+  user_id   BigInt
+  badge_id  BigInt
+  earned_at DateTime @default(now()) @db.Timestamptz(6)
+  badges    badges   @relation(fields: [badge_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users     users    @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([user_id, badge_id])
+}
+
+model user_challenges {
+  id                 BigInt               @id @default(autoincrement())
+  user_id            BigInt
+  challenge_id       BigInt
+  status             challenge_status     @default(in_progress)
+  started_on         DateTime             @default(dbgenerated("CURRENT_DATE")) @db.Date
+  completed_on       DateTime?            @db.Date
+  progress_days      Int                  @default(0)
+  challenge_checkins challenge_checkins[]
+  challenges         challenges           @relation(fields: [challenge_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users              users                @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([user_id], map: "idx_user_challenges_user")
+}
+
+model user_diets {
+  user_id BigInt
+  diet_id BigInt
+  diets   diets  @relation(fields: [diet_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users   users  @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([user_id, diet_id])
+}
+
+model user_meal_plans {
+  id           BigInt     @id @default(autoincrement())
+  user_id      BigInt
+  meal_plan_id BigInt
+  start_date   DateTime   @default(dbgenerated("CURRENT_DATE")) @db.Date
+  is_active    Boolean    @default(true)
+  created_at   DateTime   @default(now()) @db.Timestamptz(6)
+  meal_plans   meal_plans @relation(fields: [meal_plan_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users        users      @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([user_id], map: "idx_user_meal_plans_user")
+}
+
+model user_roles {
+  user_id BigInt
+  role_id BigInt
+  roles   roles  @relation(fields: [role_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users   users  @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([user_id, role_id])
+}
+
+model user_sessions {
+  id                 BigInt    @id @default(autoincrement())
+  user_id            BigInt
+  refresh_token_hash String    @unique
+  user_agent         String?
+  ip_address         String?   @db.Inet
+  expires_at         DateTime  @db.Timestamptz(6)
+  revoked_at         DateTime? @db.Timestamptz(6)
+  created_at         DateTime  @default(now()) @db.Timestamptz(6)
+  users              users     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([user_id], map: "idx_sessions_user")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model users {
+  id                                     BigInt                    @id @default(autoincrement())
+  email                                  String                    @unique @db.Citext
+  phone                                  String?                   @unique @db.VarChar(20)
+  password_hash                          String?
+  full_name                              String                    @db.VarChar(150)
+  avatar_url                             String?
+  gender                                 gender_type?
+  date_of_birth                          DateTime?                 @db.Date
+  is_active                              Boolean                   @default(true)
+  email_verified_at                      DateTime?                 @db.Timestamptz(6)
+  phone_verified_at                      DateTime?                 @db.Timestamptz(6)
+  last_login_at                          DateTime?                 @db.Timestamptz(6)
+  referral_code                          String                    @unique @default(dbgenerated("upper(substr(md5((random())::text), 1, 8))")) @db.VarChar(12)
+  referred_by                            BigInt?
+  created_at                             DateTime                  @default(now()) @db.Timestamptz(6)
+  updated_at                             DateTime                  @default(now()) @db.Timestamptz(6)
+  deleted_at                             DateTime?                 @db.Timestamptz(6)
+  addresses                              addresses[]
+  blog_comments                          blog_comments[]
+  blog_posts                             blog_posts[]
+  carts                                  carts[]
+  chat_sessions                          chat_sessions[]
+  contact_messages                       contact_messages[]
+  coupon_usages                          coupon_usages[]
+  food_diary                             food_diary[]
+  health_profiles                        health_profiles?
+  loyalty_accounts                       loyalty_accounts?
+  loyalty_transactions                   loyalty_transactions[]
+  meal_plans                             meal_plans[]
+  notification_preferences               notification_preferences?
+  notifications                          notifications[]
+  oauth_accounts                         oauth_accounts[]
+  order_status_history                   order_status_history[]
+  orders                                 orders[]
+  product_alerts                         product_alerts[]
+  product_views                          product_views[]
+  quiz_sessions                          quiz_sessions[]
+  recipe_favorites                       recipe_favorites[]
+  recipes                                recipes[]
+  referrals_referrals_referee_idTousers  referrals?                @relation("referrals_referee_idTousers")
+  referrals_referrals_referrer_idTousers referrals[]               @relation("referrals_referrer_idTousers")
+  returns                                returns[]
+  review_votes                           review_votes[]
+  reviews                                reviews[]
+  search_logs                            search_logs[]
+  stock_movements                        stock_movements[]
+  subscriptions                          subscriptions[]
+  user_allergens                         user_allergens[]
+  user_badges                            user_badges[]
+  user_challenges                        user_challenges[]
+  user_diets                             user_diets[]
+  user_meal_plans                        user_meal_plans[]
+  user_roles                             user_roles[]
+  user_sessions                          user_sessions[]
+  users                                  users?                    @relation("usersTousers", fields: [referred_by], references: [id], onUpdate: NoAction)
+  other_users                            users[]                   @relation("usersTousers")
+  verification_tokens                    verification_tokens[]
+  water_logs                             water_logs[]
+  weight_logs                            weight_logs[]
+  wishlists                              wishlists[]
+
+  @@index([referred_by], map: "idx_users_referred_by")
+}
+
+model variant_price_history {
+  id               BigInt           @id @default(autoincrement())
+  variant_id       BigInt
+  old_price        Decimal          @db.Decimal(14, 0)
+  new_price        Decimal          @db.Decimal(14, 0)
+  changed_at       DateTime         @default(now()) @db.Timestamptz(6)
+  product_variants product_variants @relation(fields: [variant_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([variant_id, changed_at(sort: Desc)], map: "idx_price_hist_variant")
+}
+
+model verification_tokens {
+  id         BigInt        @id @default(autoincrement())
+  user_id    BigInt
+  token_hash String        @unique
+  purpose    token_purpose
+  expires_at DateTime      @db.Timestamptz(6)
+  used_at    DateTime?     @db.Timestamptz(6)
+  created_at DateTime      @default(now()) @db.Timestamptz(6)
+  users      users         @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([user_id], map: "idx_vtokens_user")
+}
+
+model warehouses {
+  id              BigInt            @id @default(autoincrement())
+  code            String            @unique @db.VarChar(20)
+  name            String            @db.VarChar(150)
+  province        String?           @db.VarChar(100)
+  address         String?
+  is_cold_storage Boolean           @default(false)
+  is_active       Boolean           @default(true)
+  inventory       inventory[]
+  stock_movements stock_movements[]
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model water_logs {
+  id        BigInt   @id @default(autoincrement())
+  user_id   BigInt
+  amount_ml Int
+  logged_at DateTime @default(now()) @db.Timestamptz(6)
+  users     users    @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([user_id, logged_at], map: "idx_water_user_date")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model weight_logs {
+  id           BigInt   @id @default(autoincrement())
+  user_id      BigInt
+  weight_kg    Decimal  @db.Decimal(5, 1)
+  body_fat_pct Decimal? @db.Decimal(4, 1)
+  logged_on    DateTime @default(dbgenerated("CURRENT_DATE")) @db.Date
+  users        users    @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([user_id, logged_on])
+}
+
+model wishlists {
+  user_id    BigInt
+  product_id BigInt
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  products   products @relation(fields: [product_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users      users    @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([user_id, product_id])
+}
+
+enum activity_level {
+  sedentary
+  light
+  moderate
+  active
+  very_active
+}
+
+enum alert_type {
+  restock
+  price_drop
+}
+
+enum allergen_relation {
+  contains
+  may_contain
+}
+
+enum challenge_status {
+  in_progress
+  completed
+  failed
+  abandoned
+}
+
+enum chat_role {
+  user
+  assistant
+  system
+}
+
+enum difficulty_level {
+  easy
+  medium
+  hard
+}
+
+enum discount_type {
+  percent
+  fixed_amount
+  free_shipping
+}
+
+enum gender_type {
+  male
+  female
+  other
+}
+
+enum goal_type {
+  lose_weight
+  maintain
+  gain_muscle
+  eat_clean
+  control_blood_sugar
+}
+
+enum loyalty_txn_type {
+  earn
+  redeem
+  expire
+  adjust
+  refund
+}
+
+enum meal_type {
+  breakfast
+  lunch
+  dinner
+  snack
+}
+
+enum media_type {
+  image
+  video
+}
+
+enum movement_type {
+  purchase_in
+  sale_out
+  return_in
+  adjustment
+  expired
+  damaged
+  transfer_in
+  transfer_out
+}
+
+enum notification_type {
+  order
+  promotion
+  system
+  reminder
+  restock
+  price_drop
+  challenge
+}
+
+enum order_status {
+  pending
+  confirmed
+  processing
+  shipping
+  delivered
+  completed
+  cancelled
+  returned
+}
+
+enum payment_method {
+  cod
+  vnpay
+  momo
+  zalopay
+  bank_transfer
+  card
+}
+
+enum payment_status {
+  unpaid
+  pending
+  paid
+  failed
+  refunded
+  partially_refunded
+}
+
+enum product_status {
+  draft
+  active
+  inactive
+  discontinued
+}
+
+enum refund_status {
+  pending
+  processed
+  failed
+}
+
+enum return_status {
+  requested
+  approved
+  rejected
+  received
+  refunded
+}
+
+enum review_status {
+  pending
+  approved
+  rejected
+}
+
+enum shipment_status {
+  pending
+  picked_up
+  in_transit
+  out_for_delivery
+  delivered
+  failed
+  returned
+}
+
+enum subscription_freq {
+  weekly
+  biweekly
+  monthly
+}
+
+enum subscription_status {
+  active
+  paused
+  cancelled
+  expired
+}
+
+enum token_purpose {
+  verify_email
+  reset_password
+  verify_phone
 }
