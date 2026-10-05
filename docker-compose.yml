@@ -1,0 +1,71 @@
+version: '3.8'
+
+services:
+  # =====================================================================
+  # 1. POSTGRESQL 16 DATABASE
+  # =====================================================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: nutrio_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-nutrio_password_2026}
+      POSTGRES_DB: ${POSTGRES_DB:-nutrio_db}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-nutrio_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - nutrio_network
+
+  # =====================================================================
+  # 2. ADMINER (Web GUI Quản trị CSDL)
+  # =====================================================================
+  adminer:
+    image: adminer:latest
+    container_name: nutrio_adminer
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - nutrio_network
+
+  # =====================================================================
+  # 3. BACKEND (NestJS API Service - Dùng cho Cách 2: Chạy Full Docker)
+  # =====================================================================
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: nutrio_backend
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 5001
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-nutrio_password_2026}@postgres:5432/${POSTGRES_DB:-nutrio_db}?schema=public
+    ports:
+      - "5001:5001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - nutrio_network
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  nutrio_network:
+    driver: bridge
