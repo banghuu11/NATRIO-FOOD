@@ -219,23 +219,152 @@ export default function Nut3DCanvas() {
     nutsData.forEach((nut) => {
       // Create detailed organic 3D nut geometry
       let geo: THREE.BufferGeometry;
-      if (nut.id === 'macca') {
-        geo = new THREE.SphereGeometry(nut.size, 32, 32);
-      } else if (nut.id === 'almond') {
-        geo = new THREE.ConeGeometry(nut.size * 0.9, nut.size * 1.8, 24);
-      } else if (nut.id === 'cashew') {
-        geo = new THREE.TorusGeometry(nut.size * 0.7, nut.size * 0.35, 16, 32, Math.PI * 1.2);
-      } else if (nut.id === 'walnut') {
-        geo = new THREE.DodecahedronGeometry(nut.size, 2);
-      } else {
-        geo = new THREE.OctahedronGeometry(nut.size, 2);
-      }
+      let mat: THREE.Material;
 
-      const mat = new THREE.MeshStandardMaterial({
-        color: nut.color,
-        roughness: 0.4,
-        metalness: 0.1,
-      });
+      if (nut.id === 'macca') {
+        const maccaGeo = new THREE.SphereGeometry(nut.size * 0.95, 40, 40);
+        const mPos = maccaGeo.attributes.position;
+        for (let i = 0; i < mPos.count; i++) {
+          let x = mPos.getX(i);
+          let y = mPos.getY(i);
+          let z = mPos.getZ(i);
+          if (y < -0.15 * nut.size) {
+            const d = Math.sqrt(x * x + z * z);
+            if (d < 0.2 * nut.size) y += (0.2 * nut.size - d) * 0.22;
+          }
+          const distEq = Math.abs(y);
+          if (distEq < 0.05 * nut.size && x > 0.04 * nut.size) {
+            x -= (0.05 * nut.size - distEq) * 0.45;
+          }
+          mPos.setXYZ(i, x * 1.04, y * 0.96, z * 1.02);
+        }
+        maccaGeo.computeVertexNormals();
+        geo = maccaGeo;
+        mat = new THREE.MeshPhysicalMaterial({
+          color: 0x422818,
+          roughness: 0.38,
+          metalness: 0.0,
+          clearcoat: 0.25,
+          sheen: 0.3,
+          sheenColor: new THREE.Color(0x8D5B3A),
+        });
+      } else if (nut.id === 'almond') {
+        const almondGeo = new THREE.SphereGeometry(nut.size * 0.9, 44, 44);
+        const aPos = almondGeo.attributes.position;
+        const r = nut.size * 0.9;
+        for (let i = 0; i < aPos.count; i++) {
+          let x = aPos.getX(i);
+          let y = aPos.getY(i);
+          let z = aPos.getZ(i);
+          const normY = (y + r) / (2 * r);
+          const taper = normY > 0.4
+            ? Math.pow(Math.max(1.0 - (normY - 0.4) * 1.5, 0.08), 0.75)
+            : Math.pow(Math.max(0.4 + normY * 1.5, 0.2), 0.5);
+          let nx = x * 1.35 * Math.max(taper, 0.18);
+          let nz = z * 0.56 * Math.max(taper, 0.18);
+          let ny = y * 1.55;
+          if (nx > 0) nx += Math.sin((ny + 0.4) * 3.2) * 0.045 + 0.035;
+          aPos.setXYZ(i, nx, ny, nz);
+        }
+        almondGeo.computeVertexNormals();
+        geo = almondGeo;
+        mat = new THREE.MeshPhysicalMaterial({
+          color: 0x934F26,
+          roughness: 0.42,
+          metalness: 0.0,
+          clearcoat: 0.3,
+          sheen: 0.45,
+          sheenColor: new THREE.Color(0xD98A4E),
+        });
+      } else if (nut.id === 'cashew') {
+        const cashewGeo = new THREE.CylinderGeometry(0.08, 0.08, nut.size * 1.7, 24, 40, false);
+        const cPos = cashewGeo.attributes.position;
+        const totalH = nut.size * 1.7;
+        for (let i = 0; i < cPos.count; i++) {
+          let x = cPos.getX(i);
+          let y = cPos.getY(i);
+          let z = cPos.getZ(i);
+          const v = (y + totalH * 0.5) / totalH;
+          const angle = Math.atan2(z, x);
+          const spineAngle = Math.PI * 0.15 + v * Math.PI * 1.25;
+          const spineR = nut.size * (0.55 - (v - 0.5) * (v - 0.5) * 0.25);
+          const spineX = Math.cos(spineAngle) * spineR;
+          const spineY = Math.sin(spineAngle) * spineR * 1.15;
+          const crossR = nut.size * 0.22 * (0.65 + 0.7 * Math.sin(v * Math.PI * 0.95)) * (v > 0.72 ? 1.28 : 1.0);
+          let nx = spineX + Math.cos(angle) * crossR;
+          let ny = spineY + Math.sin(angle) * crossR * 0.92;
+          let nz = Math.sin(angle) * crossR * 0.70;
+          if (v > 0.82 && Math.abs(nz) < 0.035 * nut.size) {
+            ny -= 0.03 * (1.0 - Math.abs(nz) / (0.035 * nut.size));
+          }
+          cPos.setXYZ(i, nx, ny, nz);
+        }
+        cashewGeo.computeVertexNormals();
+        geo = cashewGeo;
+        mat = new THREE.MeshPhysicalMaterial({
+          color: 0xE8CFA3,
+          roughness: 0.40,
+          metalness: 0.0,
+          clearcoat: 0.32,
+          sheen: 0.35,
+          sheenColor: new THREE.Color(0xA56545),
+        });
+      } else if (nut.id === 'walnut') {
+        const walnutGeo = new THREE.SphereGeometry(nut.size * 0.92, 48, 48);
+        const wPos = walnutGeo.attributes.position;
+        for (let i = 0; i < wPos.count; i++) {
+          let x = wPos.getX(i);
+          let y = wPos.getY(i);
+          let z = wPos.getZ(i);
+          const distFromSeam = Math.abs(x);
+          let seamBump = distFromSeam < 0.04 ? Math.cos((distFromSeam / 0.04) * (Math.PI / 2)) * 0.038 : 0;
+          const brainWave1 = Math.sin(x * 12.0 + y * 5.0) * Math.cos(y * 11.0 + z * 6.0) * 0.042;
+          const brainWave2 = Math.sin(x * 24.0 + z * 18.0) * 0.012;
+          const lobeFactor = Math.min(distFromSeam * 25.0, 1.0);
+          let nx = x * 1.08 + seamBump * Math.sign(x || 1) + brainWave1 * lobeFactor + brainWave2 * lobeFactor;
+          let ny = y * 1.22 + brainWave1 * 0.7 * lobeFactor;
+          let nz = z * 0.92 + seamBump * 0.5 + brainWave1 * lobeFactor;
+          wPos.setXYZ(i, nx, ny, nz);
+        }
+        walnutGeo.computeVertexNormals();
+        geo = walnutGeo;
+        mat = new THREE.MeshPhysicalMaterial({
+          color: 0xBA7B47,
+          roughness: 0.48,
+          metalness: 0.0,
+          clearcoat: 0.22,
+          sheen: 0.35,
+          sheenColor: new THREE.Color(0xC48652),
+        });
+      } else {
+        const pumpkinGeo = new THREE.SphereGeometry(nut.size * 0.75, 36, 36);
+        const pkPos = pumpkinGeo.attributes.position;
+        const r = nut.size * 0.75;
+        for (let i = 0; i < pkPos.count; i++) {
+          let x = pkPos.getX(i);
+          let y = pkPos.getY(i);
+          let z = pkPos.getZ(i);
+          const t = (y + r) / (2 * r);
+          const taper = t > 0.4 ? Math.max(1.0 - (t - 0.4) * 1.45, 0.12) : (0.55 + t * 1.1);
+          let nx = x * 0.95 * taper;
+          let ny = y * 1.45;
+          const r2D = Math.sqrt(nx * nx + (ny * 0.6) * (ny * 0.6));
+          const isRim = r2D > 0.13 * nut.size;
+          let nz = z * (isRim ? 0.36 : 0.22);
+          nz += Math.sin(t * Math.PI) * 0.038;
+          pkPos.setXYZ(i, nx, ny, nz);
+        }
+        pumpkinGeo.computeVertexNormals();
+        geo = pumpkinGeo;
+        mat = new THREE.MeshPhysicalMaterial({
+          color: 0x3E5C2A,
+          roughness: 0.38,
+          metalness: 0.0,
+          clearcoat: 0.26,
+          sheen: 0.40,
+          sheenColor: new THREE.Color(0x6E8E50),
+        });
+      }
 
       const mesh = new THREE.Mesh(geo, mat);
       mesh.position.copy(nut.insidePos);

@@ -17,15 +17,7 @@ import {
 import { bannerService, BannerConfig } from '@/services/banner.service';
 import { toast } from 'sonner';
 
-// Dynamic import 3D Canvas
-const Nut3DCanvas = dynamic(() => import('@/components/storefront/Nut3DCanvas'), {
-  ssr: false,
-  loading: () => (
-    <div className="w-full h-64 flex items-center justify-center bg-slate-900 rounded-2xl">
-      <div className="w-8 h-8 rounded-full border-2 border-emerald-500/20 border-t-emerald-400 animate-spin" />
-    </div>
-  ),
-});
+
 
 export default function BannerConfigPage() {
   const [config, setConfig] = useState<BannerConfig>({
@@ -308,20 +300,11 @@ export default function BannerConfigPage() {
 
               {/* Preview Media Box */}
               <div className="aspect-square w-full rounded-2xl overflow-hidden bg-white/60 flex items-center justify-center p-2 border border-white/80">
-                {config.mode === '3d' ? (
-                  <div className="w-full h-full rounded-xl overflow-hidden bg-slate-950 relative">
-                    <Nut3DCanvas />
-                    <div className="absolute bottom-2 left-2 px-2 py-0.5 rounded bg-slate-900/80 text-[9px] text-emerald-300 font-semibold backdrop-blur-xs pointer-events-none">
-                      Mô hình 3D đang hoạt động
-                    </div>
-                  </div>
-                ) : (
-                  <img
-                    src={config.imageUrl || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=85'}
-                    alt="Preview"
-                    className="w-full h-full object-cover rounded-xl"
-                  />
-                )}
+                <img
+                  src={config.imageUrl || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=85'}
+                  alt="Preview"
+                  className="w-full h-full object-cover rounded-xl"
+                />
               </div>
 
               <div className="mt-3 text-center text-[11px] text-stone-500 font-medium">

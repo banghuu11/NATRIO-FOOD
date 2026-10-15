@@ -14,15 +14,35 @@ export const metadata: Metadata = {
   keywords: ['hạt dinh dưỡng', 'hạt macca', 'hạnh nhân mỹ', 'hạt điều bình phước', 'hạt óc chó', 'granola siêu hạt', 'bơ hạt', 'nutrio food'],
 };
 
+import SmoothScrollProvider from '@/components/providers/SmoothScrollProvider';
+
 export default function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
   return (
-    <html lang="vi" className="scroll-smooth">
-      <body className={`${inter.variable} min-h-screen bg-slate-50 text-slate-900 antialiased flex flex-col`}>
-        {children}
+    <html lang="vi" suppressHydrationWarning>
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              try {
+                const savedTheme = localStorage.getItem('theme');
+                if (savedTheme === 'dark' || (!savedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+                  document.documentElement.classList.add('dark');
+                } else {
+                  document.documentElement.classList.remove('dark');
+                }
+              } catch (e) {}
+            `,
+          }}
+        />
+      </head>
+      <body className={`${inter.variable} min-h-screen bg-white dark:bg-[#090D16] text-slate-900 dark:text-slate-100 antialiased flex flex-col transition-colors duration-200`}>
+        <SmoothScrollProvider>
+          {children}
+        </SmoothScrollProvider>
         <Toaster position="top-right" richColors />
       </body>
     </html>

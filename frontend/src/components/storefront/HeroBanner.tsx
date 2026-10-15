@@ -1,286 +1,248 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
-import dynamic from 'next/dynamic';
-import { ChevronDown, Sparkles } from 'lucide-react';
-import { bannerService, BannerConfig } from '@/services/banner.service';
+import React, { useState, useMemo } from 'react';
+import Link from 'next/link';
+import { useBannerStore } from '@/stores/useBannerStore';
+import { ArrowRight } from 'lucide-react';
 import { toast } from 'sonner';
 
-// Dynamic import 3D Canvas
-const Nut3DCanvas = dynamic(() => import('./Nut3DCanvas'), {
-  ssr: false,
-  loading: () => (
-    <div className="w-full h-full flex items-center justify-center bg-transparent">
-      <div className="w-10 h-10 rounded-full border-3 border-[#5F7E66]/20 border-t-[#5F7E66] animate-spin" />
-    </div>
-  ),
-});
-
 export default function HeroBanner() {
-  // Banner config from Backend
-  const [bannerConfig, setBannerConfig] = useState<BannerConfig>({
-    title: 'Artisan Granola',
-    subtitle: 'An organic healthy food, roasted nuts, and warm botanical.',
-    vnDescription: 'Thực phẩm hữu cơ lành mạnh, hạt sấy mộc và thảo mộc tự nhiên.',
-    mode: 'image',
-    imageUrl: 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=85',
-    model3dType: 'nut_bowl',
-    enable3dRotation: true,
-  });
+  const { bannerConfig } = useBannerStore();
 
-  // Calculator state
+  // Local state for Quick Nutrition Calculator Widget
   const [gender, setGender] = useState<'male' | 'female'>('male');
-  const [age, setAge] = useState<number>(28);
-  const [height, setHeight] = useState<number>(178);
-  const [weight, setWeight] = useState<number>(75);
-  const [activity, setActivity] = useState<number>(1.55); // Moderate
+  const [age, setAge] = useState<number>(26);
+  const [height, setHeight] = useState<number>(172);
+  const [weight, setWeight] = useState<number>(65);
+  const [activity, setActivity] = useState<number>(1.375); // Light activity
 
-  // Fetch dynamic Banner & 3D Config from Backend
-  useEffect(() => {
-    async function fetchBanner() {
-      try {
-        const res = await bannerService.getHeroBanner();
-        if (res) {
-          setBannerConfig(res);
-        }
-      } catch (err) {
-        // Keep default config
-      }
-    }
-    fetchBanner();
-  }, []);
-
-  // Calculations
+  // Reactive Nutrition Calculations
   const calculations = useMemo(() => {
-    // 1. BMI = weight (kg) / (height (m))^2
-    const hM = height / 100;
-    const bmi = hM > 0 ? (weight / (hM * hM)).toFixed(1) : '23.7';
-
-    // 2. BMR (Mifflin-St Jeor)
-    let bmr = 10 * weight + 6.25 * height - 5 * age;
+    // Harris-Benedict Formula
+    let bmr = 0;
     if (gender === 'male') {
-      bmr += 5;
+      bmr = 88.362 + 13.397 * weight + 4.799 * height - 5.677 * age;
     } else {
-      bmr -= 161;
+      bmr = 447.593 + 9.247 * weight + 3.098 * height - 4.33 * age;
     }
-    const bmrVal = Math.round(bmr);
 
-    // 3. Daily Target (TDEE)
-    const tdee = Math.round(bmrVal * activity);
+    const tdee = Math.round(bmr * activity);
+    const bmiVal = weight / Math.pow(height / 100, 2);
+    const bmi = parseFloat(bmiVal.toFixed(1));
+
+    // Protein recommended for active healthy lifestyle (1.6g / kg)
+    const targetProtein = Math.round(weight * 1.6);
 
     return {
+      tdee,
       bmi,
-      bmr: bmrVal.toLocaleString('vi-VN'),
-      tdee: tdee.toLocaleString('vi-VN'),
+      targetProtein,
     };
   }, [gender, age, height, weight, activity]);
 
   const handleGetPlan = () => {
-    toast.success('Đã nhận kế hoạch dinh dưỡng!', {
-      description: `Mục tiêu hằng ngày: ${calculations.tdee} kcal • BMI: ${calculations.bmi}`,
+    toast.success('Đã tính toán khẩu phần cá nhân hóa!', {
+      description: `Mục tiêu hằng ngày: ${calculations.tdee} kcal • BMI: ${calculations.bmi} • Đạm: ${calculations.targetProtein}g`,
     });
   };
 
   return (
-    <section className="pt-4 pb-6">
+    <section id="hero" className="pt-6 pb-12">
       <div className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
           
-          {/* 1. Left Card: Artisan Granola Hero Banner (~68% width) */}
-          <div className="lg:col-span-8 bg-[#F4EFE6] border border-[#E8DFC8] rounded-[32px] p-6 sm:p-10 relative overflow-hidden flex flex-col md:flex-row items-center justify-between shadow-xs">
+          {/* 1. Left Card: Editorial Hero Banner (~65% width) */}
+          <div className="lg:col-span-8 bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-3xl p-8 sm:p-12 relative flex flex-col justify-center shadow-xs transition-colors duration-200">
             
-            {/* Soft decorative botanical leaf in bottom-left */}
-            <div className="absolute -bottom-8 -left-8 w-44 h-44 opacity-20 pointer-events-none text-[#5F7E66]">
-              <svg viewBox="0 0 200 200" fill="currentColor" className="w-full h-full">
-                <path d="M40,160 Q20,100 80,40 Q140,20 160,80 Q140,140 40,160 Z" />
-              </svg>
-            </div>
-
             {/* Headline & Description */}
-            <div className="relative z-10 max-w-sm space-y-3 mb-6 md:mb-0 text-left">
-              <h1 className="font-serif text-3xl sm:text-4xl lg:text-5xl font-bold text-[#2C3E30] tracking-tight leading-tight">
+            <div className="max-w-2xl space-y-4 text-left">
+              <span className="text-xs font-bold tracking-widest text-emerald-800 dark:text-emerald-400 uppercase">
+                Thương Hiệu Hạt Dinh Dưỡng Mộc
+              </span>
+
+              <h1 className="font-serif text-3xl sm:text-4xl lg:text-5xl font-black text-slate-900 dark:text-white tracking-tight leading-tight">
                 {bannerConfig.title || 'Artisan Granola'}
               </h1>
-              <p className="text-sm sm:text-base text-[#5A6E5E] font-medium leading-relaxed">
-                {bannerConfig.subtitle || 'An organic healthy food, roasted nuts, and warm botanical.'}
+
+              <p className="text-sm sm:text-base text-slate-600 dark:text-slate-300 font-medium leading-relaxed">
+                {bannerConfig.subtitle || 'Dinh dưỡng thuần khiết từ các loại hạt sấy mộc tự nhiên.'}
               </p>
+
               {bannerConfig.vnDescription && (
-                <p className="text-xs text-[#7A8E7E] italic pt-1">
+                <p className="text-xs text-slate-500 dark:text-slate-400">
                   {bannerConfig.vnDescription}
                 </p>
               )}
-            </div>
 
-            {/* Right Visual: 3D Interactive Model OR High-Res Food Image */}
-            <div className="relative z-10 w-full md:w-auto flex justify-center">
-              {bannerConfig.mode === '3d' ? (
-                <div className="w-full sm:w-[440px] lg:w-[480px] h-[360px] sm:h-[420px] rounded-3xl overflow-hidden shadow-xl">
-                  <Nut3DCanvas />
-                </div>
-              ) : (
-                <div className="relative w-64 sm:w-76 lg:w-88 aspect-4/3 sm:aspect-square rounded-3xl overflow-hidden flex items-center justify-center bg-transparent">
-                  <img
-                    src={bannerConfig.imageUrl || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=85'}
-                    alt={bannerConfig.title}
-                    className="w-full h-full object-cover rounded-3xl drop-shadow-md"
-                  />
-                </div>
-              )}
+              <div className="flex flex-wrap items-center gap-3 pt-1 text-xs text-slate-500 dark:text-slate-400 font-medium">
+                <span>Sấy mộc 60°C</span>
+                <span>•</span>
+                <span>Chuẩn Nutri-Score A</span>
+                <span>•</span>
+                <span>0% Đường tinh luyện</span>
+              </div>
+
+              <div className="pt-4">
+                <Link
+                  href="/products"
+                  className="inline-flex items-center gap-2 px-6 py-3 rounded-full bg-emerald-800 hover:bg-emerald-700 text-white text-xs font-bold transition-all shadow-xs"
+                >
+                  <span>Khám phá sản phẩm</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </Link>
+              </div>
             </div>
 
           </div>
 
-          {/* 2. Right Card: Quick Nutrition Calculator Widget (~32% width) */}
-          <div className="lg:col-span-4 bg-white border border-[#EFE8DE] rounded-[32px] p-6 sm:p-7 shadow-xs flex flex-col justify-between">
+          {/* 2. Right Card: Quick Nutrition Calculator Widget (~35% width) */}
+          <div className="lg:col-span-4 bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-3xl p-7 shadow-xs flex flex-col justify-between transition-colors duration-200">
             <div>
               {/* Header */}
-              <div className="mb-4">
-                <h2 className="text-lg sm:text-xl font-black text-[#2C3E30] tracking-tight">
-                  Quick Nutrition Calculator
+              <div className="mb-5">
+                <span className="text-[10px] font-bold tracking-widest text-slate-400 uppercase">
+                  Công Cụ Định Lượng
+                </span>
+                <h2 className="text-lg font-black text-slate-900 dark:text-white mt-0.5">
+                  Tính Khẩu Phần Calo
                 </h2>
-                <div className="text-[10px] sm:text-[11px] font-bold tracking-wider text-stone-400 uppercase mt-0.5">
-                  YOUR PERSONAL NUTRITION PLAN
-                </div>
               </div>
 
               {/* Form Controls */}
-              <div className="space-y-3">
+              <div className="space-y-3.5">
                 
                 {/* Row 1: Gender & Age */}
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-xs font-semibold text-stone-600 mb-1">
-                      Gender
+                    <label className="block text-xs font-medium text-slate-500 mb-1">
+                      Giới tính
                     </label>
-                    <div className="grid grid-cols-2 p-1 bg-[#F4EFE6] rounded-xl text-xs font-bold text-center">
+                    <div className="grid grid-cols-2 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl text-xs font-semibold text-center">
                       <button
                         type="button"
                         onClick={() => setGender('male')}
                         className={`py-1.5 rounded-lg transition-all cursor-pointer ${
                           gender === 'male'
-                            ? 'bg-white text-[#2C3E30] shadow-xs font-black'
-                            : 'text-stone-500 hover:text-stone-800'
+                            ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs font-bold'
+                            : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
                         }`}
                       >
-                        Male
+                        Nam
                       </button>
                       <button
                         type="button"
                         onClick={() => setGender('female')}
                         className={`py-1.5 rounded-lg transition-all cursor-pointer ${
                           gender === 'female'
-                            ? 'bg-white text-[#2C3E30] shadow-xs font-black'
-                            : 'text-stone-500 hover:text-stone-800'
+                            ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs font-bold'
+                            : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
                         }`}
                       >
-                        Female
+                        Nữ
                       </button>
                     </div>
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-stone-600 mb-1">
-                      Age
+                    <label className="block text-xs font-medium text-slate-500 mb-1">
+                      Tuổi
                     </label>
                     <input
                       type="number"
                       value={age}
                       onChange={(e) => setAge(Number(e.target.value))}
-                      className="w-full px-3 py-1.5 bg-[#F4EFE6] border border-transparent rounded-xl text-xs sm:text-sm font-bold text-[#2C3E30] text-center focus:outline-none focus:bg-white focus:border-[#5F7E66]"
+                      className="w-full px-3 py-1.5 bg-slate-100 dark:bg-slate-800 border border-transparent rounded-xl text-xs font-bold text-slate-900 dark:text-white text-center focus:outline-none focus:bg-white dark:focus:bg-slate-900 focus:border-slate-300"
                     />
                   </div>
                 </div>
 
-                {/* Row 2: Height, Weight & Activity Level */}
-                <div className="grid grid-cols-3 gap-2 sm:gap-2.5">
+                {/* Row 2: Height & Weight */}
+                <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-[11px] font-semibold text-stone-600 mb-1">
-                      Height
+                    <label className="block text-xs font-medium text-slate-500 mb-1">
+                      Chiều cao (cm)
                     </label>
-                    <div className="relative">
-                      <input
-                        type="number"
-                        value={height}
-                        onChange={(e) => setHeight(Number(e.target.value))}
-                        className="w-full pl-2 pr-5 py-1.5 bg-[#F4EFE6] rounded-xl text-xs font-bold text-[#2C3E30] focus:outline-none focus:bg-white focus:border-[#5F7E66]"
-                      />
-                      <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[10px] text-stone-400 font-medium">
-                        cm
-                      </span>
-                    </div>
+                    <input
+                      type="number"
+                      value={height}
+                      onChange={(e) => setHeight(Number(e.target.value))}
+                      className="w-full px-3 py-1.5 bg-slate-100 dark:bg-slate-800 border border-transparent rounded-xl text-xs font-bold text-slate-900 dark:text-white text-center focus:outline-none focus:bg-white dark:focus:bg-slate-900 focus:border-slate-300"
+                    />
                   </div>
 
                   <div>
-                    <label className="block text-[11px] font-semibold text-stone-600 mb-1">
-                      Weight
+                    <label className="block text-xs font-medium text-slate-500 mb-1">
+                      Cân nặng (kg)
                     </label>
-                    <div className="relative">
-                      <input
-                        type="number"
-                        value={weight}
-                        onChange={(e) => setWeight(Number(e.target.value))}
-                        className="w-full pl-2 pr-5 py-1.5 bg-[#F4EFE6] rounded-xl text-xs font-bold text-[#2C3E30] focus:outline-none focus:bg-white focus:border-[#5F7E66]"
-                      />
-                      <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[10px] text-stone-400 font-medium">
-                        kg
-                      </span>
+                    <input
+                      type="number"
+                      value={weight}
+                      onChange={(e) => setWeight(Number(e.target.value))}
+                      className="w-full px-3 py-1.5 bg-slate-100 dark:bg-slate-800 border border-transparent rounded-xl text-xs font-bold text-slate-900 dark:text-white text-center focus:outline-none focus:bg-white dark:focus:bg-slate-900 focus:border-slate-300"
+                    />
+                  </div>
+                </div>
+
+                {/* Activity Level */}
+                <div>
+                  <label className="block text-xs font-medium text-slate-500 mb-1">
+                    Mức độ vận động
+                  </label>
+                  <select
+                    value={activity}
+                    onChange={(e) => setActivity(Number(e.target.value))}
+                    className="w-full px-3 py-2 bg-slate-100 dark:bg-slate-800 border border-transparent rounded-xl text-xs font-medium text-slate-900 dark:text-white focus:outline-none"
+                  >
+                    <option value={1.2}>Ít vận động (Dân văn phòng)</option>
+                    <option value={1.375}>Nhẹ (Tập thể thao 1-3 ngày/tuần)</option>
+                    <option value={1.55}>Vừa (Tập thể thao 3-5 ngày/tuần)</option>
+                    <option value={1.725}>Nhiều (Tập thể thao 6-7 ngày/tuần)</option>
+                  </select>
+                </div>
+
+                {/* Reactive Result Card */}
+                <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 mt-2">
+                  <div className="grid grid-cols-3 text-center divide-x divide-slate-200 dark:divide-slate-700">
+                    <div>
+                      <div className="text-[10px] text-slate-400 uppercase font-semibold">TDEE</div>
+                      <div className="text-base font-black text-slate-900 dark:text-white mt-0.5">
+                        {calculations.tdee}
+                      </div>
+                      <div className="text-[9px] text-slate-400">kcal/ngày</div>
+                    </div>
+
+                    <div>
+                      <div className="text-[10px] text-slate-400 uppercase font-semibold">BMI</div>
+                      <div className="text-base font-black text-slate-900 dark:text-white mt-0.5">
+                        {calculations.bmi}
+                      </div>
+                      <div className="text-[9px] text-slate-400">chỉ số</div>
+                    </div>
+
+                    <div>
+                      <div className="text-[10px] text-slate-400 uppercase font-semibold">Protein</div>
+                      <div className="text-base font-black text-slate-900 dark:text-white mt-0.5">
+                        {calculations.targetProtein}g
+                      </div>
+                      <div className="text-[9px] text-slate-400">mục tiêu</div>
                     </div>
                   </div>
-
-                  <div>
-                    <label className="block text-[11px] font-semibold text-stone-600 mb-1 truncate">
-                      Activity Level
-                    </label>
-                    <div className="relative">
-                      <select
-                        value={activity}
-                        onChange={(e) => setActivity(Number(e.target.value))}
-                        className="w-full px-2 py-1.5 bg-[#F4EFE6] rounded-xl text-xs font-bold text-[#2C3E30] appearance-none pr-5 cursor-pointer focus:outline-none focus:bg-white focus:border-[#5F7E66]"
-                      >
-                        <option value={1.2}>Sedentary</option>
-                        <option value={1.375}>Light</option>
-                        <option value={1.55}>Moderate</option>
-                        <option value={1.725}>Active</option>
-                        <option value={1.9}>Very Active</option>
-                      </select>
-                      <ChevronDown className="w-3.5 h-3.5 text-stone-500 absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                    </div>
-                  </div>
                 </div>
 
-              </div>
-
-              {/* 3 Metrics Result Row */}
-              <div className="grid grid-cols-3 gap-2 py-3.5 my-2 border-y border-[#EFE8DE] text-center">
-                <div>
-                  <div className="text-[10px] font-bold text-stone-400 uppercase">BMI</div>
-                  <div className="text-base sm:text-lg font-black text-[#2C3E30]">
-                    {calculations.bmi}
-                  </div>
-                </div>
-                <div>
-                  <div className="text-[10px] font-bold text-stone-400 uppercase">BMR</div>
-                  <div className="text-xs sm:text-sm font-black text-[#2C3E30] mt-0.5">
-                    {calculations.bmr} <span className="text-[10px] font-normal text-stone-400">kcal</span>
-                  </div>
-                </div>
-                <div>
-                  <div className="text-[10px] font-bold text-stone-400 uppercase">Daily Target</div>
-                  <div className="text-xs sm:text-sm font-black text-[#C5853B] mt-0.5">
-                    {calculations.tdee} <span className="text-[10px] font-normal text-stone-400">kcal</span>
-                  </div>
-                </div>
               </div>
             </div>
 
-            {/* Full-width Caramel Button: GET PLAN */}
-            <button
-              type="button"
-              onClick={handleGetPlan}
-              className="w-full py-3 rounded-2xl bg-[#C5853B] hover:bg-[#B4752E] text-white font-black text-xs sm:text-sm tracking-wide uppercase shadow-sm hover:shadow-md transition-all cursor-pointer mt-2"
-            >
-              GET PLAN
-            </button>
+            {/* Action button */}
+            <div className="pt-4">
+              <button
+                type="button"
+                onClick={handleGetPlan}
+                className="w-full py-2.5 rounded-full bg-slate-900 hover:bg-slate-800 dark:bg-slate-100 dark:hover:bg-white text-white dark:text-slate-900 text-xs font-bold transition-colors cursor-pointer"
+              >
+                Gợi Ý Khẩu Phần Phù Hợp
+              </button>
+            </div>
+
           </div>
 
         </div>
