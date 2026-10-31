@@ -1,8 +1,10 @@
-import { Body, Controller, Delete, Get, Param, ParseIntPipe, Post, Put, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, Put, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { UsersService } from './users.service';
 import { CreateAddressDto, UpdateUserDto } from './dto/users.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { RolesGuard } from '../../common/guards/roles.guard';
+import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser, CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 
 @ApiTags('Users')
@@ -11,6 +13,39 @@ import { CurrentUser, CurrentUserPayload } from '../../common/decorators/current
 @ApiBearerAuth('JWT-auth')
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
+
+  @Get('admin/all')
+  @UseGuards(RolesGuard)
+  @Roles('admin', 'staff')
+  @ApiOperation({ summary: '[ADMIN] Lấy danh sách toàn bộ người dùng kèm vai trò, điểm loyalty, số đơn hàng' })
+  findAllForAdmin(
+    @Query('search') search?: string,
+    @Query('isActive') isActive?: string,
+    @Query('page') page?: number,
+    @Query('limit') limit?: number,
+  ) {
+    const activeBool = isActive !== undefined ? isActive === 'true' : undefined;
+    return this.usersService.findAllForAdmin({ search, isActive: activeBool, page, limit });
+  }
+
+  @Get('admin/:id')
+  @UseGuards(RolesGuard)
+  @Roles('admin', 'staff')
+  @ApiOperation({ summary: '[ADMIN] Chi tiết người dùng: hồ sơ, sổ địa chỉ, lịch sử mua hàng & LTV' })
+  getUserDetail(@Param('id', ParseIntPipe) id: number) {
+    return this.usersService.getUserDetail(id);
+  }
+
+  @Patch('admin/:id/status')
+  @UseGuards(RolesGuard)
+  @Roles('admin')
+  @ApiOperation({ summary: '[ADMIN] Khóa hoặc mở khóa tài khoản người dùng' })
+  updateUserStatus(
+    @Param('id', ParseIntPipe) id: number,
+    @Body('isActive') isActive: boolean,
+  ) {
+    return this.usersService.updateUserStatus(id, isActive);
+  }
 
   @Put('profile')
   @ApiOperation({ summary: 'Cập nhật thông tin tài khoản (Họ tên, số điện thoại, avatar)' })

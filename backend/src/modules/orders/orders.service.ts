@@ -285,4 +285,170 @@ export class OrdersService {
       })),
     };
   }
+
+  /**
+   * [ADMIN] Lấy toàn bộ danh sách đơn hàng toàn sàn (hỗ trợ tìm kiếm, lọc trạng thái, phân trang)
+   */
+  async findAllForAdmin(query: { status?: string; search?: string; page?: number; limit?: number }) {
+    const page = query.page || 1;
+    const limit = query.limit || 20;
+    const skip = (page - 1) * limit;
+
+    const where: any = {};
+    if (query.status && query.status !== 'all') {
+      where.status = query.status;
+    }
+    if (query.search) {
+      where.OR = [
+        { order_number: { contains: query.search, mode: 'insensitive' } },
+        { ship_recipient_name: { contains: query.search, mode: 'insensitive' } },
+        { ship_phone: { contains: query.search, mode: 'insensitive' } },
+      ];
+    }
+
+    const [orders, total] = await Promise.all([
+      this.prisma.orders.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { placed_at: 'desc' },
+        include: {
+          users: { select: { id: true, full_name: true, phone: true, email: true } },
+          order_items: true,
+          shipments: true,
+        },
+      }),
+      this.prisma.orders.count({ where }),
+    ]);
+
+    const formatted = orders.map((o) => ({
+      id: Number(o.id),
+      orderNumber: o.order_number,
+      customer: {
+        id: Number(o.users.id),
+        name: o.users.full_name,
+        phone: o.users.phone,
+        email: o.users.email,
+      },
+      recipient: {
+        name: o.ship_recipient_name,
+        phone: o.ship_phone,
+        address: `${o.ship_street}, ${o.ship_ward}, ${o.ship_district}, ${o.ship_province}`,
+        note: o.ship_note,
+      },
+      status: o.status,
+      paymentStatus: o.payment_status,
+      paymentMethod: o.payment_method,
+      totalAmount: Number(o.total_amount),
+      subtotal: Number(o.subtotal),
+      shippingFee: Number(o.shipping_fee),
+      discountAmount: Number(o.discount_amount),
+      placedAt: o.placed_at,
+      itemsCount: o.order_items.length,
+      itemsSummary: o.order_items.map((i) => `${i.product_name} (${i.quantity})`).join(', '),
+      trackingNumber: o.shipments[0]?.tracking_number || null,
+      carrier: o.shipments[0]?.carrier || null,
+    }));
+
+    return {
+      data: formatted,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
+
+  /**
+   * [ADMIN] Cập nhật trạng thái đơn hàng (Duyệt, đang xử lý, đã gửi hàng, hoàn tất, hủy)
+   */
+  async updateOrderStatus(orderId: number, newStatus: any, note?: string, changedByUserId?: number) {
+    const order = await this.prisma.orders.findUnique({
+      where: { id: BigInt(orderId) },
+    });
+    if (!order) {
+      throw new NotFoundException(`Không tìm thấy đơn hàng ID: ${orderId}`);
+    }
+
+    const oldStatus = order.status;
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.orders.update({
+        where: { id: BigInt(orderId) },
+        data: {
+          status: newStatus,
+          updated_at: new Date(),
+        },
+      });
+
+      await tx.order_status_history.create({
+        data: {
+          order_id: BigInt(orderId),
+          from_status: oldStatus,
+          to_status: newStatus,
+          note: note || `Admin cập nhật trạng thái sang ${newStatus}`,
+          changed_by: changedByUserId ? BigInt(changedByUserId) : null,
+        },
+      });
+    });
+
+    return {
+      message: `Đã cập nhật trạng thái đơn hàng sang: ${newStatus}`,
+      orderId,
+      status: newStatus,
+    };
+  }
+
+  /**
+   * [ADMIN] Tạo vận đơn và gán mã tracking cho đơn hàng
+   */
+  async createShipment(orderId: number, dto: { carrier: string; trackingCode: string; estimatedDelivery?: string }) {
+    const order = await this.prisma.orders.findUnique({
+      where: { id: BigInt(orderId) },
+    });
+    if (!order) {
+      throw new NotFoundException(`Không tìm thấy đơn hàng ID: ${orderId}`);
+    }
+
+    const shipment = await this.prisma.$transaction(async (tx) => {
+      const sh = await tx.shipments.create({
+        data: {
+          order_id: BigInt(orderId),
+          carrier: dto.carrier,
+          tracking_number: dto.trackingCode,
+          status: 'picked_up',
+          picked_up_at: new Date(),
+          estimated_delivery_at: dto.estimatedDelivery ? new Date(dto.estimatedDelivery) : null,
+        },
+      });
+
+      await tx.orders.update({
+        where: { id: BigInt(orderId) },
+        data: {
+          status: 'shipping',
+          updated_at: new Date(),
+        },
+      });
+
+      await tx.order_status_history.create({
+        data: {
+          order_id: BigInt(orderId),
+          from_status: order.status,
+          to_status: 'shipping',
+          note: `Đã giao hàng cho đơn vị vận chuyển ${dto.carrier} (Mã vận đơn: ${dto.trackingCode})`,
+        },
+      });
+
+      return sh;
+    });
+
+    return {
+      message: 'Tạo vận đơn thành công, đơn hàng đã chuyển sang trạng thái Đang giao hàng',
+      shipmentId: Number(shipment.id),
+      trackingNumber: shipment.tracking_number,
+      carrier: shipment.carrier,
+    };
+  }
 }
