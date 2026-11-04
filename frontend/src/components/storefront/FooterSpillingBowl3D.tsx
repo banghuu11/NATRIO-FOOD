@@ -91,9 +91,9 @@ export default function FooterSpillingBowl3D() {
     frontBounce.position.set(-0.2, 1.0, 4.8);
     scene.add(frontBounce);
 
-    // Soft Shadow Ground Plane - Trải rộng và nghiêng thoai thoải để nhận bóng đổ hạt xuống tận section dưới
+    // Soft Shadow Ground Plane - Trải rộng và nghiêng thoai thoải để nhận bóng đổ hạt xuống tận section dưới (ẩn hoàn toàn ở p=0, hiện dần khi hạt đổ)
     const floorGeo = new THREE.PlaneGeometry(54, 36);
-    const floorMat = new THREE.ShadowMaterial({ opacity: 0.28 });
+    const floorMat = new THREE.ShadowMaterial({ opacity: 0.0 });
     const floorMesh = new THREE.Mesh(floorGeo, floorMat);
     floorMesh.rotation.x = -Math.PI / 2 + 0.08;
     floorMesh.position.y = -0.92;
@@ -216,7 +216,7 @@ export default function FooterSpillingBowl3D() {
     });
 
     const bowlMesh = new THREE.Mesh(bowlGeo, bowlMat);
-    bowlMesh.castShadow = true;
+    bowlMesh.castShadow = false; // Không đổ bóng xa 2m xuống floorMesh ở dưới, dùng contactMesh trực tiếp dưới đáy tô
     bowlMesh.receiveShadow = true;
 
     const bowlGroup = new THREE.Group();
@@ -265,17 +265,17 @@ export default function FooterSpillingBowl3D() {
     bowlGroup.position.set(currentBowlBaseX, currentBowlBaseY, 0);
     bowlGroup.scale.setScalar(bowlScale);
 
-    // 4.1 Contact Shadow dưới đáy tô ở trạng thái nghỉ
-    const contactShadowGeo = new THREE.PlaneGeometry(3.6, 2.5);
+    // 4.1 Contact Shadow thực tế ngay dưới đáy tô ở trạng thái nghỉ
+    const contactShadowGeo = new THREE.PlaneGeometry(2.8, 2.0);
     const contactCanvas = document.createElement('canvas');
     contactCanvas.width = 256;
     contactCanvas.height = 256;
     const cCtx = contactCanvas.getContext('2d')!;
     const cGrad = cCtx.createRadialGradient(128, 128, 0, 128, 128, 128);
-    cGrad.addColorStop(0, 'rgba(35, 20, 10, 0.38)');
-    cGrad.addColorStop(0.35, 'rgba(35, 20, 10, 0.18)');
-    cGrad.addColorStop(0.70, 'rgba(35, 20, 10, 0.05)');
-    cGrad.addColorStop(1, 'rgba(35, 20, 10, 0)');
+    cGrad.addColorStop(0, 'rgba(40, 25, 12, 0.30)');
+    cGrad.addColorStop(0.35, 'rgba(40, 25, 12, 0.14)');
+    cGrad.addColorStop(0.70, 'rgba(40, 25, 12, 0.03)');
+    cGrad.addColorStop(1, 'rgba(40, 25, 12, 0)');
     cCtx.fillStyle = cGrad;
     cCtx.fillRect(0, 0, 256, 256);
     const contactTex = new THREE.CanvasTexture(contactCanvas);
@@ -286,7 +286,7 @@ export default function FooterSpillingBowl3D() {
     });
     const contactMesh = new THREE.Mesh(contactShadowGeo, contactMat);
     contactMesh.rotation.x = -Math.PI / 2;
-    contactMesh.position.set(0.12, -0.47, 0.15); // Lệch nhẹ theo góc rọi của đèn chính
+    contactMesh.position.set(0.10, -0.93, 0.12); // Tọa độ đáy tô trong bowlGroup (y = -0.92)
     bowlGroup.add(contactMesh);
 
     // ========================================================
@@ -584,11 +584,11 @@ export default function FooterSpillingBowl3D() {
     // 6.1 TẠO VỊ TRÍ TRONG TÔ (INSIDE BOWL) THEO CÁC TẦNG LỚP & CHỐNG CHỒNG ĐÈ (ANTI-COLLISION)
     const insidePositions: THREE.Vector3[] = [];
     const layers = [
-      { count: 5, y: -0.72 * bowlScale, r: 0.70 * bowlScale },
-      { count: 7, y: -0.35 * bowlScale, r: 1.15 * bowlScale },
-      { count: 9, y: 0.00 * bowlScale,  r: 1.55 * bowlScale },
-      { count: 10, y: 0.35 * bowlScale, r: 1.85 * bowlScale },
-      { count: 7,  y: 0.70 * bowlScale, r: 1.35 * bowlScale },
+      { count: 5, y: -0.38 * bowlScale, r: 0.60 * bowlScale }, // Nâng cao tầng đáy an toàn, cách xa đáy tô
+      { count: 7, y: -0.08 * bowlScale, r: 1.00 * bowlScale },
+      { count: 9, y: 0.22 * bowlScale,  r: 1.40 * bowlScale },
+      { count: 10, y: 0.52 * bowlScale, r: 1.70 * bowlScale },
+      { count: 7,  y: 0.80 * bowlScale, r: 1.25 * bowlScale },
     ];
 
     layers.forEach((l, lIdx) => {
@@ -626,14 +626,35 @@ export default function FooterSpillingBowl3D() {
           }
         }
 
-        // Giữ các hạt nằm gọn trong thành tô gỗ kraft
-        const bowlMaxR = (2.20 * bowlScale) * Math.sqrt(Math.max(0.05, (insidePositions[i].y + 0.80 * bowlScale) / (1.80 * bowlScale)));
+        // 1. CHỐNG LỌT QUA ĐÁY TÔ: Giữ đáy hạt luôn cao hơn mặt sàn trong của tô, tuyệt đối không lọt qua đáy
+        const minFloorY = -0.78 * bowlScale + nutRadii[i] + 0.04;
+        if (insidePositions[i].y < minFloorY) {
+          insidePositions[i].y = minFloorY;
+        }
+
+        // 2. Giữ các hạt nằm gọn trong thành tô gỗ kraft
+        const bowlMaxR = (2.12 * bowlScale) * Math.sqrt(Math.max(0.05, (insidePositions[i].y + 0.78 * bowlScale) / (1.80 * bowlScale)));
         const currentR = Math.sqrt(insidePositions[i].x * insidePositions[i].x + insidePositions[i].z * insidePositions[i].z);
-        if (currentR > bowlMaxR - nutRadii[i] * 0.5) {
-          const factor = (bowlMaxR - nutRadii[i] * 0.5) / (currentR || 1);
+        if (currentR > bowlMaxR - nutRadii[i] * 0.75) {
+          const factor = (bowlMaxR - nutRadii[i] * 0.75) / (currentR || 1);
           insidePositions[i].x *= factor;
           insidePositions[i].z *= factor;
         }
+      }
+    }
+
+    // Đảm bảo tuyệt đối 100% không hạt nào bị lọt đáy hay xuyên thành tô
+    for (let i = 0; i < totalNuts; i++) {
+      const minFloorY = -0.78 * bowlScale + nutRadii[i] + 0.04;
+      if (insidePositions[i].y < minFloorY) {
+        insidePositions[i].y = minFloorY;
+      }
+      const bowlMaxR = (2.12 * bowlScale) * Math.sqrt(Math.max(0.05, (insidePositions[i].y + 0.78 * bowlScale) / (1.80 * bowlScale)));
+      const currentR = Math.sqrt(insidePositions[i].x * insidePositions[i].x + insidePositions[i].z * insidePositions[i].z);
+      if (currentR > bowlMaxR - nutRadii[i] * 0.75) {
+        const factor = (bowlMaxR - nutRadii[i] * 0.75) / (currentR || 1);
+        insidePositions[i].x *= factor;
+        insidePositions[i].z *= factor;
       }
     }
 
@@ -880,6 +901,9 @@ export default function FooterSpillingBowl3D() {
 
       // Contact shadow mờ dần khi tô bắt đầu nghiêng và nâng lên đổ hạt
       contactMat.opacity = Math.max(0, 1 - p * 2.8);
+
+      // Floor shadow chỉ hiện dần khi cuộn trang và các hạt bắt đầu đổ tràn xuống sàn (p=0 ẩn hoàn toàn)
+      floorMat.opacity = Math.min(0.26, p * 0.35);
 
       // Tumble tilt angles (Nghiêng đổ sang TRÁI)
       const targetRotZ = 1.16 * p; // roll onto left side
