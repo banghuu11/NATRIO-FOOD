@@ -63,7 +63,7 @@ export default function FooterSpillingBowl3D() {
 
     // Warm Sun Key Light
     const keyLight = new THREE.DirectionalLight(0xfff3db, 1.8);
-    keyLight.position.set(-4.0, 5.8, 3.8);
+    keyLight.position.set(-4.0, 6.8, 3.8);
     keyLight.castShadow = true;
     keyLight.shadow.mapSize.width = 2048;
     keyLight.shadow.mapSize.height = 2048;
@@ -230,13 +230,64 @@ export default function FooterSpillingBowl3D() {
       const vHalf = camDist * Math.tan((45 * Math.PI) / 360);
       const hHalf = vHalf * aspect; // Mép viền phải tuyệt đối của khung nhìn 3D
       const bowlRadius = 2.48 * bowlScale;
-      // Đặt tô sát sạt mép viền phải
-      const rightPadding = w < 640 ? 0.20 : 0.35;
-      return Math.max(hHalf - bowlRadius - rightPadding, 1.4);
+
+      if (w < 768) {
+        // Mobile: căn chỉnh góc phải vừa vặn trong màn hình
+        return Math.max(0.2, hHalf - bowlRadius - 0.15);
+      }
+
+      // Desktop / Tablet: căn chỉnh cân đối theo cột phải của container max-w-[1400px]
+      const containerMaxW = Math.min(w, 1400);
+      const containerHalfWIn3D = (containerMaxW / w) * hHalf;
+      const targetX = containerHalfWIn3D - bowlRadius - 0.20;
+      return Math.max(targetX, 1.2);
     };
+
+    const getBaseY = (w: number, h: number) => {
+      const container = containerRef.current;
+      const containerH = container && container.clientHeight > 0
+        ? container.clientHeight
+        : (w < 640 ? 460 : w < 1024 ? 500 : 540);
+      const camDist = w < 768 ? 7.8 : w < 1024 ? 6.8 : 6.4;
+      const vHalf = camDist * Math.tan((45 * Math.PI) / 360);
+      
+      // Chênh lệch pixel giữa tâm section chứa chữ banner và tâm canvas holder
+      const pixelDiff = (h - containerH) / 2;
+      const offset3D = (pixelDiff / Math.max(h, 1)) * (2 * vHalf);
+      
+      // Độ nhích nhẹ (+0.10) để mắt nhìn thấy tô nằm cân bằng tuyệt đối ngang tầm mắt với chữ banner
+      const opticalNudge = w < 768 ? 0.04 : 0.10;
+      return offset3D + opticalNudge;
+    };
+
     let currentBowlBaseX = getBaseX(holder.clientWidth, holder.clientHeight);
-    bowlGroup.position.set(currentBowlBaseX, 0.0, 0);
+    let currentBowlBaseY = getBaseY(holder.clientWidth, holder.clientHeight);
+    bowlGroup.position.set(currentBowlBaseX, currentBowlBaseY, 0);
     bowlGroup.scale.setScalar(bowlScale);
+
+    // 4.1 Contact Shadow dưới đáy tô ở trạng thái nghỉ
+    const contactShadowGeo = new THREE.PlaneGeometry(3.6, 2.5);
+    const contactCanvas = document.createElement('canvas');
+    contactCanvas.width = 256;
+    contactCanvas.height = 256;
+    const cCtx = contactCanvas.getContext('2d')!;
+    const cGrad = cCtx.createRadialGradient(128, 128, 0, 128, 128, 128);
+    cGrad.addColorStop(0, 'rgba(35, 20, 10, 0.38)');
+    cGrad.addColorStop(0.35, 'rgba(35, 20, 10, 0.18)');
+    cGrad.addColorStop(0.70, 'rgba(35, 20, 10, 0.05)');
+    cGrad.addColorStop(1, 'rgba(35, 20, 10, 0)');
+    cCtx.fillStyle = cGrad;
+    cCtx.fillRect(0, 0, 256, 256);
+    const contactTex = new THREE.CanvasTexture(contactCanvas);
+    const contactMat = new THREE.MeshBasicMaterial({
+      map: contactTex,
+      transparent: true,
+      depthWrite: false,
+    });
+    const contactMesh = new THREE.Mesh(contactShadowGeo, contactMat);
+    contactMesh.rotation.x = -Math.PI / 2;
+    contactMesh.position.set(0.12, -0.47, 0.15); // Lệch nhẹ theo góc rọi của đèn chính
+    bowlGroup.add(contactMesh);
 
     // ========================================================
     // 5. PHOTOREALISTIC 3D ANATOMICAL NUT GEOMETRIES & PBR MATERIALS
@@ -714,7 +765,7 @@ export default function FooterSpillingBowl3D() {
       const heightFrac = Math.max(0, Math.min(1, (insidePos.y + 0.70) / 1.35));
       const layerDelay = (1 - heightFrac) * 0.12 + (i % 6) * 0.005;
 
-      mesh.position.copy(insidePos);
+      mesh.position.copy(insidePos).add(bowlGroup.position);
       mesh.quaternion.copy(initialQuat);
 
       nutParticles.push({
@@ -788,6 +839,7 @@ export default function FooterSpillingBowl3D() {
       }
 
       currentBowlBaseX = getBaseX(width, height);
+      currentBowlBaseY = getBaseY(width, height);
     };
     window.addEventListener('resize', onResize);
     onResize();
@@ -812,11 +864,12 @@ export default function FooterSpillingBowl3D() {
 
       // Camera subtle parallax: khi cuộn, camera hơi chúc nhẹ góc nhìn xuống theo dòng hạt đổ tràn sang section dưới
       camera.position.x += (mouseX - camera.position.x * 0.20) * 0.40;
-      camera.lookAt(-0.30 * p, -0.12 - 0.32 * p, 0.42 * p);
+      const targetLookAtY = (currentBowlBaseY * 0.22) * (1 - p) + (-0.12 - 0.32 * p);
+      camera.lookAt(-0.30 * p, targetLookAtY, 0.42 * p);
 
-      // BOWL MOTION: Tô cố định sát mép phải trong container, giữ vững không nhảy ra ngoài padding
+      // BOWL MOTION: Tô cố định ngang tầm chữ banner ở trạng thái nghỉ (p=0), khi cuộn nghiêng đổ mượt mà
       const bowlRestX = currentBowlBaseX - 0.06 * p;
-      const bowlRestY = -0.12 - 0.22 * p;
+      const bowlRestY = currentBowlBaseY - 0.50 * p;
       const bowlRestZ = -0.2 * p;
 
       bowlGroup.position.set(
@@ -824,6 +877,9 @@ export default function FooterSpillingBowl3D() {
         bowlRestY + Math.sin(elapsed * 1.5) * 0.01 * (1 - p),
         bowlRestZ
       );
+
+      // Contact shadow mờ dần khi tô bắt đầu nghiêng và nâng lên đổ hạt
+      contactMat.opacity = Math.max(0, 1 - p * 2.8);
 
       // Tumble tilt angles (Nghiêng đổ sang TRÁI)
       const targetRotZ = 1.16 * p; // roll onto left side
@@ -898,6 +954,7 @@ export default function FooterSpillingBowl3D() {
 
       // Dispose geometries
       bowlGeo.dispose();
+      contactShadowGeo.dispose();
       almondGeo.dispose();
       maccaGeo.dispose();
       cashewGeo.dispose();
@@ -908,6 +965,7 @@ export default function FooterSpillingBowl3D() {
       // Dispose textures & materials
       envTexture.dispose();
       kraftBowlTex.dispose();
+      contactTex.dispose();
       almondSkinTex.dispose();
       cashewSkinTex.dispose();
       macadamiaShellTex.dispose();
@@ -915,6 +973,7 @@ export default function FooterSpillingBowl3D() {
       pumpkinSeedTex.dispose();
 
       bowlMat.dispose();
+      contactMat.dispose();
       almondMat.dispose();
       maccaMat.dispose();
       cashewMat.dispose();
