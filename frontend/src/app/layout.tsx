@@ -43,7 +43,15 @@ export default function RootLayout({
         <SmoothScrollProvider>
           {children}
         </SmoothScrollProvider>
-        <Toaster position="top-right" richColors />
+        <Toaster
+          position="bottom-right"
+          richColors
+          closeButton
+          toastOptions={{
+            className: 'rounded-2xl border font-sans shadow-xl text-xs sm:text-sm',
+            duration: 4000,
+          }}
+        />
       </body>
     </html>
   );

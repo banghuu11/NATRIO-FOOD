@@ -1,14 +1,21 @@
 import { apiClient } from '@/lib/api/axios';
 
 export interface BannerConfig {
+  tagline?: string;
   title: string;
-  subtitle: string;
+  subtitle?: string;
+  description?: string;
   vnDescription?: string;
+  buttonText?: string;
+  buttonLink?: string;
+  highlightText?: string;
+  backgroundImageUrl?: string;
+  backgroundOverlay?: string; // 'gradient' | 'dark' | 'light' | 'subtle' | 'none'
+  backgroundColor?: string;
   mode: 'image' | '3d';
   imageUrl?: string;
   model3dType?: 'nut_bowl' | 'almond' | 'macca' | 'granola_jar' | 'chia_seed';
   enable3dRotation?: boolean;
-  backgroundColor?: string;
 }
 
 export const bannerService = {

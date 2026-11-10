@@ -51,17 +51,17 @@ export default function Footer() {
             </h4>
             <ul className="space-y-2 text-xs text-slate-600 dark:text-slate-400 font-medium">
               <li>
-                <Link href="/" className="hover:text-emerald-700 dark:hover:text-emerald-400 transition-colors">
+                <Link href="/about" className="hover:text-emerald-700 dark:hover:text-emerald-400 transition-colors">
                   Câu chuyện thương hiệu
                 </Link>
               </li>
               <li>
-                <Link href="/" className="hover:text-emerald-700 dark:hover:text-emerald-400 transition-colors">
+                <Link href="/about" className="hover:text-emerald-700 dark:hover:text-emerald-400 transition-colors">
                   Nông trường hữu cơ Đà Lạt
                 </Link>
               </li>
               <li>
-                <Link href="/" className="hover:text-emerald-700 dark:hover:text-emerald-400 transition-colors">
+                <Link href="/products" className="hover:text-emerald-700 dark:hover:text-emerald-400 transition-colors">
                   Hệ thống kiểm định Nutri-Score
                 </Link>
               </li>
@@ -80,22 +80,22 @@ export default function Footer() {
             </h4>
             <ul className="space-y-2 text-xs text-slate-600 dark:text-slate-400 font-medium">
               <li>
-                <Link href="/" className="hover:text-emerald-700 dark:hover:text-emerald-400 transition-colors">
+                <Link href="/#hero" className="hover:text-emerald-700 dark:hover:text-emerald-400 transition-colors">
                   Máy tính chỉ số TDEE & BMI
                 </Link>
               </li>
               <li>
-                <Link href="/" className="hover:text-emerald-700 dark:hover:text-emerald-400 transition-colors">
+                <Link href="/contact" className="hover:text-emerald-700 dark:hover:text-emerald-400 transition-colors">
                   Chính sách giao hàng 2h
                 </Link>
               </li>
               <li>
-                <Link href="/" className="hover:text-emerald-700 dark:hover:text-emerald-400 transition-colors">
+                <Link href="/contact" className="hover:text-emerald-700 dark:hover:text-emerald-400 transition-colors">
                   Chính sách đổi trả & hoàn tiền
                 </Link>
               </li>
               <li>
-                <Link href="/" className="hover:text-emerald-700 dark:hover:text-emerald-400 transition-colors">
+                <Link href="/contact" className="hover:text-emerald-700 dark:hover:text-emerald-400 transition-colors">
                   Bảo mật thông tin khách hàng
                 </Link>
               </li>

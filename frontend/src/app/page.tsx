@@ -26,7 +26,7 @@ export default function HomePage() {
   const [isCartOpen, setIsCartOpen] = useState(false);
 
   return (
-    <div className="relative min-h-screen bg-white dark:bg-[#090D16] text-slate-900 dark:text-slate-100 flex flex-col selection:bg-emerald-500/20 overflow-x-hidden transition-colors duration-200">
+    <div className="relative min-h-screen bg-white dark:bg-[#090D16] text-slate-900 dark:text-slate-100 flex flex-col selection:bg-emerald-500/20 overflow-x-clip transition-colors duration-200">
       
       {/* 0. Subtle Botanical Background */}
       <BotanicalBackground />
@@ -34,10 +34,11 @@ export default function HomePage() {
       {/* 0.1 3D Nut Scrolling Animation along side margin
       <ScrollNut3D /> */}
 
-      {/* 1. Header (Navbar with Search, Page links & Theme Toggle) */}
-      <Header onOpenCart={() => setIsCartOpen(true)} />
+      {/* 1. Header (Translucent Frosted Glass Navbar floating inside/over Banner) */}
+      <Header onOpenCart={() => setIsCartOpen(true)} hideSearch isOverlay />
 
-      <main className="relative z-10 flex-1">
+      {/* z-20: nằm trên Footer (z-10) để hạt 3D lăn xuống được tận footer, vẫn dưới Header (z-50) */}
+      <main className="relative z-20 flex-1">
         
         {/* ======================================================== */}
         {/* 1. TOP 3D HERO BANNER: TÔ HẠT MỘC TƯƠNG TÁC 3D          */}

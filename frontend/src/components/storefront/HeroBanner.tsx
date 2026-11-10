@@ -61,12 +61,14 @@ export default function HeroBanner() {
               </span>
 
               <h1 className="font-serif text-3xl sm:text-4xl lg:text-5xl font-black text-slate-900 dark:text-white tracking-tight leading-tight">
-                {bannerConfig.title || 'Artisan Granola'}
+                {bannerConfig.title || 'NUTRIO Food'}
               </h1>
 
-              <p className="text-sm sm:text-base text-slate-600 dark:text-slate-300 font-medium leading-relaxed">
-                {bannerConfig.subtitle || 'Dinh dưỡng thuần khiết từ các loại hạt sấy mộc tự nhiên.'}
-              </p>
+              {Boolean(bannerConfig.subtitle && bannerConfig.subtitle.trim().length > 0) && (
+                <p className="text-sm sm:text-base text-slate-600 dark:text-slate-300 font-medium leading-relaxed">
+                  {bannerConfig.subtitle}
+                </p>
+              )}
 
               {bannerConfig.vnDescription && (
                 <p className="text-xs text-slate-500 dark:text-slate-400">

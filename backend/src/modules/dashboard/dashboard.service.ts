@@ -190,4 +190,107 @@ export class DashboardService {
       itemsCount: o.order_items.length,
     }));
   }
+
+  /**
+   * Báo cáo phân tích doanh thu, cơ cấu thanh toán & sản phẩm bán chạy
+   */
+  async getAnalytics() {
+    const [orders, orderItems, users, products] = await Promise.all([
+      this.prisma.orders.findMany({
+        select: {
+          id: true,
+          status: true,
+          payment_method: true,
+          total_amount: true,
+          subtotal: true,
+          discount_amount: true,
+          shipping_fee: true,
+          created_at: true,
+        },
+      }),
+      this.prisma.order_items.findMany({
+        select: {
+          product_name: true,
+          quantity: true,
+          line_total: true,
+        },
+      }),
+      this.prisma.users.findMany({
+        select: {
+          id: true,
+          created_at: true,
+          user_roles: { include: { roles: true } },
+        },
+      }),
+      this.prisma.products.count(),
+    ]);
+
+    let totalGrossRevenue = 0;
+    let totalDiscountGiven = 0;
+    const statusCounts: Record<string, number> = {
+      pending: 0,
+      confirmed: 0,
+      processing: 0,
+      shipping: 0,
+      delivered: 0,
+      completed: 0,
+      cancelled: 0,
+    };
+    const paymentMethods: Record<string, { count: number; total: number }> = {
+      cod: { count: 0, total: 0 },
+      vnpay: { count: 0, total: 0 },
+      momo: { count: 0, total: 0 },
+      bank_transfer: { count: 0, total: 0 },
+    };
+
+    orders.forEach((o) => {
+      const amt = Number(o.total_amount);
+      const disc = Number(o.discount_amount);
+      totalDiscountGiven += disc;
+
+      if (['confirmed', 'processing', 'shipping', 'delivered', 'completed'].includes(o.status)) {
+        totalGrossRevenue += amt;
+      }
+
+      if (statusCounts[o.status] !== undefined) {
+        statusCounts[o.status]++;
+      } else {
+        statusCounts[o.status] = 1;
+      }
+
+      const pm = o.payment_method?.toLowerCase() || 'cod';
+      if (!paymentMethods[pm]) {
+        paymentMethods[pm] = { count: 0, total: 0 };
+      }
+      paymentMethods[pm].count++;
+      paymentMethods[pm].total += amt;
+    });
+
+    const productSales: Record<string, { name: string; quantity: number; revenue: number }> = {};
+    orderItems.forEach((item) => {
+      if (!productSales[item.product_name]) {
+        productSales[item.product_name] = { name: item.product_name, quantity: 0, revenue: 0 };
+      }
+      productSales[item.product_name].quantity += item.quantity;
+      productSales[item.product_name].revenue += Number(item.line_total);
+    });
+
+    const topSellingProducts = Object.values(productSales)
+      .sort((a, b) => b.quantity - a.quantity)
+      .slice(0, 5);
+
+    return {
+      summary: {
+        totalRevenue: totalGrossRevenue,
+        totalOrders: orders.length,
+        totalCustomers: users.length,
+        totalProducts: products,
+        totalDiscountGiven,
+        averageOrderValue: orders.length > 0 ? Math.round(totalGrossRevenue / orders.length) : 0,
+      },
+      statusDistribution: statusCounts,
+      paymentMethodDistribution: paymentMethods,
+      topSellingProducts,
+    };
+  }
 }

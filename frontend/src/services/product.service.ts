@@ -48,6 +48,59 @@ export interface CategoryItem {
   productCount: number;
 }
 
+export interface CreateProductPayload {
+  name: string;
+  slug?: string;
+  categoryId: number;
+  shortDescription?: string;
+  description?: string;
+  originCountry?: string;
+  shelfLifeDays?: number;
+  nutriScoreGrade: 'A' | 'B' | 'C' | 'D' | 'E';
+  isFeatured?: boolean;
+  status?: 'draft' | 'active' | 'archived' | 'discontinued';
+  imageUrls?: string[];
+  initialVariant?: {
+    sku: string;
+    name: string;
+    netWeightG: number;
+    price: number;
+    compareAtPrice?: number | null;
+    costPrice?: number | null;
+    reorderLevel?: number;
+  };
+  nutritionFacts?: {
+    caloriesKcal: number;
+    proteinG: number;
+    carbohydratesG: number;
+    sugarsG?: number;
+    fatG: number;
+    fiberG?: number;
+    sodiumMg?: number;
+  };
+}
+
+export interface UpdateProductPayload {
+  name?: string;
+  categoryId?: number;
+  shortDescription?: string;
+  description?: string;
+  originCountry?: string;
+  shelfLifeDays?: number;
+  nutriScoreGrade?: 'A' | 'B' | 'C' | 'D' | 'E';
+  isFeatured?: boolean;
+  status?: string;
+  nutritionFacts?: {
+    caloriesKcal?: number;
+    proteinG?: number;
+    carbohydratesG?: number;
+    sugarsG?: number;
+    fatG?: number;
+    fiberG?: number;
+    sodiumMg?: number;
+  };
+}
+
 export const productService = {
   async getProducts(params?: {
     categorySlug?: string;
@@ -61,6 +114,32 @@ export const productService = {
     limit?: number;
   }): Promise<{ data: ProductItem[]; meta: { total: number; page: number; limit: number; totalPages: number } }> {
     const response = await apiClient.get('/products', { params });
+    return response.data;
+  },
+
+  async getAllForAdmin(params?: {
+    search?: string;
+    status?: string;
+    nutriScore?: string;
+    page?: number;
+    limit?: number;
+  }) {
+    const response = await apiClient.get('/products/admin/all', { params });
+    return response.data;
+  },
+
+  async createProduct(data: CreateProductPayload) {
+    const response = await apiClient.post('/products', data);
+    return response.data;
+  },
+
+  async updateProduct(id: number, data: UpdateProductPayload) {
+    const response = await apiClient.put(`/products/${id}`, data);
+    return response.data;
+  },
+
+  async archiveProduct(id: number) {
+    const response = await apiClient.delete(`/products/${id}`);
     return response.data;
   },
 

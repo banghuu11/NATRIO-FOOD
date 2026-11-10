@@ -1,26 +1,43 @@
 'use client';
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef } from 'react';
 import * as THREE from 'three';
 import Link from 'next/link';
 import { ArrowRight } from 'lucide-react';
+import { useBannerStore } from '@/stores/useBannerStore';
 
 interface NutParticle {
   mesh: THREE.Mesh;
   insidePos: THREE.Vector3;
-  targetPos: THREE.Vector3;
+  lipPosLocal: THREE.Vector3;
+  dirLocal: THREE.Vector3;
   rollAxis: THREE.Vector3;
   totalRollRadians: number;
   initialQuat: THREE.Quaternion;
   finalQuat: THREE.Quaternion;
   delay: number;
+  /** Thứ hạng chạm đất 0..1: 0 = rơi gần hero, 1 = rơi tận footer */
+  landT: number;
+  /** Độ lệch (px cuộn) để các hạt cuối không chạm đất cùng một lúc */
+  landJitter: number;
+  /** Vị trí chạm đất theo chiều dọc viewport (0..1) */
+  landF: number;
+  /** Vị trí chạm đất theo chiều ngang (0..1 chiều rộng trang) */
+  targetXFrac: number;
+  targetZ: number;
+  /** true = đợt 1: đổ sang trái quanh banner; false = đợt 2: lăn xuống dần tới footer */
+  pour: boolean;
 }
 
 
 export default function FooterSpillingBowl3D() {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasHolderRef = useRef<HTMLDivElement>(null);
-  const [inView, setInView] = useState(false);
+  const { bannerConfig, fetchBannerConfig } = useBannerStore();
+
+  useEffect(() => {
+    fetchBannerConfig();
+  }, [fetchBannerConfig]);
 
   useEffect(() => {
     const holder = canvasHolderRef.current;
@@ -31,15 +48,19 @@ export default function FooterSpillingBowl3D() {
     // ========================================================
     const scene = new THREE.Scene();
     
-    // Balanced perspective with pleasant breathing room
+    // CAMERA NHÌN THẲNG (không nghiêng) để toạ độ 3D ánh xạ tuyến tính 1:1 với toạ độ pixel của trang.
+    // Canvas được cố định phủ toàn bộ viewport (position: fixed) → hạt có thể lăn xuống tận footer theo thanh cuộn.
+    const CAM_FOV = 45;
+    const BOWL_Z = 1.0; // Tô đặt gần tường hứng bóng (bóng sát chân tô) nhưng thành sau của tô vẫn không xuyên qua tường
+    const WALL_Z = -0.35; // Tường ảo phía sau hạt dùng để hứng bóng đổ (drop shadow) toàn trang
     const camera = new THREE.PerspectiveCamera(
-      45,
+      CAM_FOV,
       holder.clientWidth / holder.clientHeight,
       0.45,
       100
     );
-    camera.position.set(0, 2.7, 6.4);
-    camera.lookAt(-0.25, -0.1, 0);
+    camera.position.set(0, 0, 9);
+    camera.lookAt(0, 0, 0);
 
     const renderer = new THREE.WebGLRenderer({
       alpha: true,
@@ -51,8 +72,8 @@ export default function FooterSpillingBowl3D() {
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.0;
-    renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.shadowMap.enabled = false; // Bóng dùng blob mềm ngay dưới vật thể (ánh sáng từ trên xuống) thay cho shadow-map
+    renderer.shadowMap.type = THREE.PCFShadowMap; // PCF hỗ trợ shadow.radius để làm mờ mép bóng
     holder.appendChild(renderer.domElement);
 
     // ========================================================
@@ -63,17 +84,19 @@ export default function FooterSpillingBowl3D() {
 
     // Warm Sun Key Light
     const keyLight = new THREE.DirectionalLight(0xfff3db, 1.8);
-    keyLight.position.set(-4.0, 6.8, 3.8);
-    keyLight.castShadow = true;
+    const keyLightDir = new THREE.Vector3(-0.25, 1.0, 0.85).normalize(); // Ánh sáng chính chiếu từ TRÊN XUỐNG (hơi chếch trước-trái)
+    keyLight.position.copy(keyLightDir).multiplyScalar(18);
+    keyLight.castShadow = false;
     keyLight.shadow.mapSize.width = 2048;
     keyLight.shadow.mapSize.height = 2048;
     keyLight.shadow.camera.near = 0.5;
-    keyLight.shadow.camera.far = 18;
-    keyLight.shadow.camera.left = -8.0;
-    keyLight.shadow.camera.right = 8.0;
-    keyLight.shadow.camera.top = 5.0;
-    keyLight.shadow.camera.bottom = -5.0;
+    keyLight.shadow.camera.far = 40;
+    keyLight.shadow.camera.left = -9.0;
+    keyLight.shadow.camera.right = 9.0;
+    keyLight.shadow.camera.top = 9.0;
+    keyLight.shadow.camera.bottom = -9.0;
     keyLight.shadow.bias = -0.0006;
+    keyLight.shadow.radius = 5; // Mép bóng mềm, tự nhiên
     scene.add(keyLight);
 
     // Soft Fill Light
@@ -91,14 +114,14 @@ export default function FooterSpillingBowl3D() {
     frontBounce.position.set(-0.2, 1.0, 4.8);
     scene.add(frontBounce);
 
-    // Soft Shadow Ground Plane - Trải rộng và nghiêng thoai thoải để nhận bóng đổ hạt xuống tận section dưới (ẩn hoàn toàn ở p=0, hiện dần khi hạt đổ)
-    const floorGeo = new THREE.PlaneGeometry(54, 36);
-    const floorMat = new THREE.ShadowMaterial({ opacity: 0.0 });
+    // Tường ảo hứng bóng: nằm ngay sau mặt phẳng hạt, cố định theo viewport → mọi hạt (đang rơi hay đã nằm yên)
+    // đều có bóng đổ mềm lệch xuống phía dưới-phải, ở bất kỳ vị trí nào trên trang.
+    const floorGeo = new THREE.PlaneGeometry(90, 70);
+    const floorMat = new THREE.ShadowMaterial({ opacity: 0.2 });
     const floorMesh = new THREE.Mesh(floorGeo, floorMat);
-    floorMesh.rotation.x = -Math.PI / 2 + 0.08;
-    floorMesh.position.y = -0.92;
+    floorMesh.position.set(0, 0, WALL_Z);
     floorMesh.receiveShadow = true;
-    scene.add(floorMesh);
+    // (không thêm tường hứng bóng vào scene nữa: bóng được vẽ bằng blob mềm ngay dưới vật thể)
 
     // ========================================================
     // 2.5 CULINARY STUDIO ENVIRONMENT MAP (Warm Bounce Reflections)
@@ -216,7 +239,7 @@ export default function FooterSpillingBowl3D() {
     });
 
     const bowlMesh = new THREE.Mesh(bowlGeo, bowlMat);
-    bowlMesh.castShadow = false; // Không đổ bóng xa 2m xuống floorMesh ở dưới, dùng contactMesh trực tiếp dưới đáy tô
+    bowlMesh.castShadow = true; // Đổ bóng chân thực chuẩn 3D của thành tô
     bowlMesh.receiveShadow = true;
 
     const bowlGroup = new THREE.Group();
@@ -224,70 +247,73 @@ export default function FooterSpillingBowl3D() {
     scene.add(bowlGroup);
 
     const bowlScale = 0.50; // Thu nhỏ tô xinh xắn, vừa vặn, chuẩn kích thước tô ăn nhẹ
-    const getBaseX = (w: number, h: number) => {
-      const aspect = w / Math.max(h, 1);
-      const camDist = w < 768 ? 7.8 : w < 1024 ? 6.8 : 6.4;
-      const vHalf = camDist * Math.tan((45 * Math.PI) / 360);
-      const hHalf = vHalf * aspect; // Mép viền phải tuyệt đối của khung nhìn 3D
-      const bowlRadius = 2.48 * bowlScale;
-
-      if (w < 768) {
-        // Mobile: căn chỉnh góc phải vừa vặn trong màn hình
-        return Math.max(0.2, hHalf - bowlRadius - 0.15);
-      }
-
-      // Desktop / Tablet: căn chỉnh cân đối theo cột phải của container max-w-[1400px]
-      const containerMaxW = Math.min(w, 1400);
-      const containerHalfWIn3D = (containerMaxW / w) * hHalf;
-      const targetX = containerHalfWIn3D - bowlRadius - 0.20;
-      return Math.max(targetX, 1.2);
-    };
-
-    const getBaseY = (w: number, h: number) => {
-      const container = containerRef.current;
-      const containerH = container && container.clientHeight > 0
-        ? container.clientHeight
-        : (w < 640 ? 460 : w < 1024 ? 500 : 540);
-      const camDist = w < 768 ? 7.8 : w < 1024 ? 6.8 : 6.4;
-      const vHalf = camDist * Math.tan((45 * Math.PI) / 360);
-      
-      // Chênh lệch pixel giữa tâm section chứa chữ banner và tâm canvas holder
-      const pixelDiff = (h - containerH) / 2;
-      const offset3D = (pixelDiff / Math.max(h, 1)) * (2 * vHalf);
-      
-      // Độ nhích nhẹ (+0.10) để mắt nhìn thấy tô nằm cân bằng tuyệt đối ngang tầm mắt với chữ banner
-      const opticalNudge = w < 768 ? 0.04 : 0.10;
-      return offset3D + opticalNudge;
-    };
-
-    let currentBowlBaseX = getBaseX(holder.clientWidth, holder.clientHeight);
-    let currentBowlBaseY = getBaseY(holder.clientWidth, holder.clientHeight);
-    bowlGroup.position.set(currentBowlBaseX, currentBowlBaseY, 0);
     bowlGroup.scale.setScalar(bowlScale);
 
-    // 4.1 Contact Shadow thực tế ngay dưới đáy tô ở trạng thái nghỉ
-    const contactShadowGeo = new THREE.PlaneGeometry(2.8, 2.0);
-    const contactCanvas = document.createElement('canvas');
-    contactCanvas.width = 256;
-    contactCanvas.height = 256;
-    const cCtx = contactCanvas.getContext('2d')!;
-    const cGrad = cCtx.createRadialGradient(128, 128, 0, 128, 128, 128);
-    cGrad.addColorStop(0, 'rgba(40, 25, 12, 0.30)');
-    cGrad.addColorStop(0.35, 'rgba(40, 25, 12, 0.14)');
-    cGrad.addColorStop(0.70, 'rgba(40, 25, 12, 0.03)');
-    cGrad.addColorStop(1, 'rgba(40, 25, 12, 0)');
-    cCtx.fillStyle = cGrad;
-    cCtx.fillRect(0, 0, 256, 256);
-    const contactTex = new THREE.CanvasTexture(contactCanvas);
-    const contactMat = new THREE.MeshBasicMaterial({
-      map: contactTex,
-      transparent: true,
-      depthWrite: false,
-    });
-    const contactMesh = new THREE.Mesh(contactShadowGeo, contactMat);
-    contactMesh.rotation.x = -Math.PI / 2;
-    contactMesh.position.set(0.10, -0.93, 0.12); // Tọa độ đáy tô trong bowlGroup (y = -0.92)
-    bowlGroup.add(contactMesh);
+    // ========================================================
+    // 4.1 HỆ TOẠ ĐỘ PIXEL TRANG ↔ KHÔNG GIAN 3D
+    // Canvas cố định phủ viewport; vị trí mỗi vật thể được tính từ toạ độ "trang" (pageY) trừ đi scrollY,
+    // nên hạt đã rơi xuống sẽ nằm yên trên trang và cuộn cùng nội dung, kể cả khi ở tận footer.
+    // ========================================================
+    const halfFovTan = Math.tan((CAM_FOV * Math.PI) / 360);
+    let viewW = holder.clientWidth;
+    let viewH = holder.clientHeight;
+    let camDist = 9;
+    let wpp = 0.0073; // số đơn vị 3D trên mỗi pixel tại mặt phẳng z = 0
+
+    const getBowlPx = (w: number) => Math.min(Math.max(w * 0.27, 210), 380);
+
+    const toWorld = (px: number, py: number, z: number, out: THREE.Vector3) => {
+      const k = (camDist - z) / camDist;
+      return out.set((px - viewW / 2) * wpp * k, (viewH / 2 - py) * wpp * k, z);
+    };
+
+    const updateProjection = () => {
+      viewW = holder.clientWidth;
+      viewH = holder.clientHeight;
+      const bowlPx = getBowlPx(viewW);
+      // Khoảng cách camera → tô sao cho tô rộng đúng bowlPx pixel trên màn hình
+      const dBowl = (2.48 * viewH) / (2 * halfFovTan * bowlPx);
+      camDist = dBowl + BOWL_Z;
+      wpp = (2 * camDist * halfFovTan) / viewH;
+
+      camera.aspect = viewW / viewH;
+      camera.position.set(0, 0, camDist);
+      camera.lookAt(0, 0, 0);
+      camera.updateProjectionMatrix();
+
+      // Khung bóng đổ phủ trọn viewport
+      const R = Math.sqrt(viewW * viewW + viewH * viewH) * wpp * 0.5 + 3;
+      keyLight.shadow.camera.left = -R;
+      keyLight.shadow.camera.right = R;
+      keyLight.shadow.camera.top = R;
+      keyLight.shadow.camera.bottom = -R;
+      keyLight.shadow.camera.updateProjectionMatrix();
+    };
+    updateProjection();
+
+    // Vị trí tô (toạ độ trang) & quãng cuộn để tô đổ hết hạt
+    let bowlPageX = 0;
+    let bowlPageY = 0;
+    let spillDist = 420;
+    const measureLayout = () => {
+      const sec = containerRef.current;
+      if (!sec) return;
+      const r = sec.getBoundingClientRect();
+      const top = r.top + window.scrollY;
+      const bowlPx = getBowlPx(viewW);
+      const cw = Math.min(viewW, 1400);
+      const pad = viewW < 640 ? 16 : viewW < 1024 ? 24 : 32;
+      if (viewW < 768) {
+        bowlPageX = viewW - pad - bowlPx * 0.5;
+        bowlPageY = top + r.height - bowlPx * 0.42;
+      } else {
+        // Căn vào cột phải của container max-w-[1400px], ngang tầm khối chữ banner
+        bowlPageX = viewW / 2 + cw / 2 - pad - bowlPx * 0.5 - 10;
+        bowlPageY = top + r.height * 0.5 + 6;
+      }
+      spillDist = Math.max(r.height * 0.48, 230);
+    };
+    measureLayout();
 
     // ========================================================
     // 5. PHOTOREALISTIC 3D ANATOMICAL NUT GEOMETRIES & PBR MATERIALS
@@ -658,72 +684,9 @@ export default function FooterSpillingBowl3D() {
       }
     }
 
-    // 6.2 TẠO ĐIỂM TIẾP ĐẤT TRÊN SÀN (TARGET FLOOR POSITIONS) RẢI RỘNG KHẮP BANNER & SANG KHỐI DƯỚI
-    const targetPositions: THREE.Vector3[] = [];
-    const isMobile = holder.clientWidth < 768;
-
-    // Phân bổ 38 hạt trải dài theo 3 vùng không gian rộng lớn để tạo dòng hạt đổ tràn bao la:
-    // Vùng 1 (13 hạt): Lăn xa tít tắp sang bên trái, bao phủ khu vực chữ và tràn xuống section dưới
-    // Vùng 2 (15 hạt): Tràn giữa trung tâm, kết nối từ tô sang mép trái
-    // Vùng 3 (10 hạt): Rải rác quanh miệng tô và chân đế tô
-    for (let i = 0; i < totalNuts; i++) {
-      let targetX: number;
-      let targetZ: number;
-
-      if (i < 13) {
-        // VÙNG 1: LĂN XA TÍT TẮP SANG TRÁI & TRÀN SÂU XUỐNG SECTION DƯỚI
-        const u = i / 12;
-        const dist = (isMobile ? 2.6 : 4.6) + u * (isMobile ? 1.4 : 2.4);
-        const angle = 0.08 + u * 0.95 + (Math.random() - 0.5) * 0.15;
-        targetX = (currentBowlBaseX - 0.6) - Math.cos(angle) * dist;
-        // Tràn vừa phải ra phía trước theo trục Z (không đâm quá sát vào mắt camera để tránh bị phóng đại ảo)
-        targetZ = 0.5 + Math.sin(angle) * dist * 0.52 + (Math.random() - 0.5) * 0.25;
-      } else if (i < 28) {
-        // VÙNG 2: DÒNG CHẢY TRUNG TÂM (Rải đều ở giữa sân khấu và tràn một phần xuống dưới)
-        const u = (i - 13) / 14;
-        const dist = (isMobile ? 1.5 : 2.6) + u * (isMobile ? 1.2 : 2.0);
-        const angle = -0.15 + u * 1.15 + (Math.random() - 0.5) * 0.2;
-        targetX = (currentBowlBaseX - 0.6) - Math.cos(angle) * dist;
-        targetZ = 0.4 + Math.sin(angle) * dist * 0.55 + (Math.random() - 0.5) * 0.25;
-      } else {
-        // VÙNG 3: VỰC MIỆNG TÔ (Gần chân tô, hạt vừa rớt khỏi miệng)
-        const u = (i - 28) / 9;
-        const dist = 0.8 + u * 1.6;
-        const angle = -0.35 + u * 1.35 + (Math.random() - 0.5) * 0.2;
-        targetX = (currentBowlBaseX - 0.5) - Math.cos(angle) * dist;
-        targetZ = 0.3 + Math.sin(angle) * dist * 0.60 + (Math.random() - 0.5) * 0.2;
-      }
-
-      targetPositions.push(new THREE.Vector3(targetX, 0, targetZ));
-    }
-
-    // 45 vòng lặp thư giãn đẩy hạt tách rời tuyệt đối trên mặt phẳng (X, Z) sàn, đảm bảo không chồng lấn
-    for (let iter = 0; iter < 45; iter++) {
-      for (let i = 0; i < totalNuts; i++) {
-        for (let j = i + 1; j < totalNuts; j++) {
-          const dx = targetPositions[i].x - targetPositions[j].x;
-          const dz = targetPositions[i].z - targetPositions[j].z;
-          const d = Math.sqrt(dx * dx + dz * dz) || 0.001;
-          const minDist = nutRadii[i] + nutRadii[j] + 0.10; // Khoảng cách thênh thang, thoáng đạt
-          if (d < minDist) {
-            const overlap = (minDist - d) * 0.5;
-            const nx = dx / d;
-            const nz = dz / d;
-            targetPositions[i].x += nx * overlap;
-            targetPositions[i].z += nz * overlap;
-            targetPositions[j].x -= nx * overlap;
-            targetPositions[j].z -= nz * overlap;
-          }
-        }
-      }
-    }
-
-    // Tính độ cao Y tiếp sàn chuẩn xác theo độ dốc tự nhiên tràn xuống section dưới
-    for (let i = 0; i < totalNuts; i++) {
-      const forwardDrop = (targetPositions[i].z - 0.45) * 0.14;
-      const leftDrop = Math.max(0, (currentBowlBaseX - targetPositions[i].x) * 0.022);
-      targetPositions[i].y = -0.88 - forwardDrop - leftDrop + (nutRadii[i] * 0.35);
-    }
+    // 6.2 KẾ HOẠCH RƠI: mỗi hạt có một "thứ hạng chạm đất" riêng trải đều từ ngay dưới hero đến tận footer.
+    // Khi người dùng cuộn tới đâu, các hạt tương ứng sẽ lăn xuống và nằm yên tại vị trí đó trên trang.
+    const isMobile = viewW < 768;
 
     // 6.3 KHỞI TẠO TỪNG HẠT MESH & THÔNG SỐ VẬT LÝ LĂN
     for (let i = 0; i < totalNuts; i++) {
@@ -757,7 +720,6 @@ export default function FooterSpillingBowl3D() {
       mesh.scale.setScalar(scaleRandom);
 
       const insidePos = insidePositions[i];
-      const targetPos = targetPositions[i];
 
       // Khởi tạo góc nghiêng tự nhiên trong tô
       const initialEuler = new THREE.Euler(
@@ -767,7 +729,7 @@ export default function FooterSpillingBowl3D() {
       );
       const initialQuat = new THREE.Quaternion().setFromEuler(initialEuler);
 
-      // Góc nằm yên phẳng tự nhiên trên mặt sàn khi kết thúc lăn
+      // Góc nằm yên tự nhiên khi kết thúc lăn
       const finalEuler = new THREE.Euler(
         (Math.random() - 0.5) * 0.30,
         Math.random() * Math.PI * 2,
@@ -775,16 +737,37 @@ export default function FooterSpillingBowl3D() {
       );
       const finalQuat = new THREE.Quaternion().setFromEuler(finalEuler);
 
-      // Trục lăn tiếp tuyến vuông góc với hướng dịch chuyển trên mặt phẳng XZ
-      const moveDir = targetPos.clone().sub(insidePos).setY(0).normalize();
-      const rollAxis = new THREE.Vector3(-moveDir.z, (Math.random() - 0.5) * 0.15, moveDir.x).normalize();
+      // Trục lăn ngẫu nhiên: hạt vừa lăn vừa xoay khi rơi xuống
+      const rollAxis = new THREE.Vector3(
+        Math.random() - 0.5,
+        Math.random() - 0.5,
+        Math.random() * 0.8 + 0.2
+      ).normalize();
 
-      // Số vòng lăn hữu hạn trong suốt hành trình (1.5 đến 2.8 vòng rồi dừng hẳn)
-      const totalRollRadians = Math.PI * 2 * (1.5 + Math.random() * 1.3);
+      // Thông số rơi (thứ hạng, làn, độ cao chạm đất...) được gán ở bước phân đợt phía sau
+      const landT = 0;
+      const totalRollRadians = Math.PI * 2 * 2;
+      const targetXFrac = 0.5;
+      const landF = 0.5;
+      const landJitter = Math.random() * 70;
+      const targetZ = Math.random() * 0.5;
 
       // Delay đổ theo tầng: hạt ở trên miệng tô đổ ra trước, hạt dưới đáy đổ ra sau mượt mà
       const heightFrac = Math.max(0, Math.min(1, (insidePos.y + 0.70) / 1.35));
       const layerDelay = (1 - heightFrac) * 0.12 + (i % 6) * 0.005;
+
+      // Điểm tràn riêng dọc theo cung vành miệng tô (Pouring Lip Arc) phía trước-trái:
+      const rCrest = 2.40 * bowlScale;
+      const yCrest = 1.08 * bowlScale;
+      // Tâm cung rót ~2.15 rad (~123°), trải đều góc ±0.36 rad (~±20°)
+      const lipSpread = (((i * 1.6180339887) % 1) - 0.5) * 0.72;
+      const lipAngle = 2.15 + lipSpread;
+      const lipPosLocal = new THREE.Vector3(
+        rCrest * Math.cos(lipAngle),
+        yCrest,
+        rCrest * Math.sin(lipAngle)
+      );
+      const dirLocal = lipPosLocal.clone().sub(insidePos).normalize();
 
       mesh.position.copy(insidePos).add(bowlGroup.position);
       mesh.quaternion.copy(initialQuat);
@@ -792,170 +775,333 @@ export default function FooterSpillingBowl3D() {
       nutParticles.push({
         mesh,
         insidePos,
-        targetPos,
+        lipPosLocal,
+        dirLocal,
         rollAxis,
         totalRollRadians,
         initialQuat,
         finalQuat,
         delay: layerDelay,
+        landT,
+        landJitter,
+        landF,
+        targetXFrac,
+        targetZ,
+        pour: false,
       });
 
       nutParent.add(mesh);
     }
 
     // ========================================================
-    // 7. SCROLL PROGRESSION & MOUSE PARALLAX
+    // 6.3b PHÂN ĐỢT RƠI
+    // Đợt 1 (POUR_COUNT hạt ở tầng trên): đổ sang TRÁI như lúc đầu, rải quanh banner và mép card bên dưới.
+    // Đợt 2 (các hạt còn lại ở tầng dưới): lăn xuống dần theo thanh cuộn, trải đến tận footer.
     // ========================================================
-    let currentScrollFraction = 0;
-    let targetScrollFraction = 0;
-
-    const onScroll = () => {
-      const container = containerRef.current;
-      if (!container) return;
-
-      const rect = container.getBoundingClientRect();
-      const windowHeight = window.innerHeight;
-
-      // Smart trigger: Seamlessly supports Top Hero Banner mode and mid-page mode
-      let progress = 0;
-      if (rect.top <= 80) {
-        // Top Hero position: starts at 0 at the very top, smoothly spills as user scrolls down
-        const scrollDist = Math.max(-rect.top + 20, 0);
-        progress = scrollDist / Math.max(rect.height * 0.78, 320);
-      } else {
-        const startY = windowHeight * 0.88;
-        const endY = windowHeight * 0.10;
-        progress = (startY - rect.top) / (startY - endY + rect.height * 0.35);
+    const POUR_COUNT = 22;
+    const byDelay = nutParticles.map((_, i) => i).sort((a, b) => nutParticles[a].delay - nutParticles[b].delay);
+    const shuffleIdx = (arr: number[]) => {
+      for (let i = arr.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
       }
+      return arr;
+    };
+    const pourIdx = shuffleIdx(byDelay.slice(0, POUR_COUNT));
+    const rollIdx = shuffleIdx(byDelay.slice(POUR_COUNT));
 
-      targetScrollFraction = Math.min(Math.max(progress, 0), 1);
-      setInView(rect.top < windowHeight && rect.bottom > 0);
+    pourIdx.forEach((ni, rank) => {
+      const it = nutParticles[ni];
+      it.pour = true;
+      it.landT = rank / Math.max(pourIdx.length - 1, 1);
+      it.targetXFrac = isMobile ? 0.06 + Math.random() * 0.7 : 0.07 + Math.random() * 0.58; // Phía TRÁI tô
+      it.landF = 0.22 + Math.random() * 0.32;
+      it.totalRollRadians = Math.PI * 2 * (1.2 + Math.random() * 1.0);
+    });
+
+    rollIdx.forEach((ni, rank) => {
+      const it = nutParticles[ni];
+      it.pour = false;
+      it.landT = rank / Math.max(rollIdx.length - 1, 1);
+      if (isMobile) {
+        it.targetXFrac = 0.06 + Math.random() * 0.88;
+      } else {
+        // Ưu tiên hai bên lề để không che nội dung chính
+        const lane = Math.random();
+        if (lane < 0.36) it.targetXFrac = 0.02 + Math.random() * 0.17;
+        else if (lane < 0.72) it.targetXFrac = 0.81 + Math.random() * 0.17;
+        else it.targetXFrac = 0.20 + Math.random() * 0.60;
+      }
+      it.landF = it.landT > 0.7 ? 0.62 + Math.random() * 0.33 : 0.40 + Math.random() * 0.50;
+      it.totalRollRadians = Math.PI * 2 * (1.5 + Math.random() * 1.3 + it.landT * 3.0);
+    });
+
+    // ========================================================
+    // 6.4 BÓNG MỀM (BLOB SHADOW) - ÁNH SÁNG TỪ TRÊN XUỐNG
+    // Bóng nằm ngay phía dưới mỗi hạt và dưới tô, luôn đúng hướng dù hạt ở đâu trên trang.
+    // ========================================================
+    const blobCanvas = document.createElement('canvas');
+    blobCanvas.width = 128;
+    blobCanvas.height = 128;
+    const bCtx = blobCanvas.getContext('2d')!;
+    const bGrad = bCtx.createRadialGradient(64, 64, 0, 64, 64, 64);
+    bGrad.addColorStop(0, 'rgba(38, 24, 12, 0.60)');
+    bGrad.addColorStop(0.45, 'rgba(38, 24, 12, 0.30)');
+    bGrad.addColorStop(0.8, 'rgba(38, 24, 12, 0.06)');
+    bGrad.addColorStop(1, 'rgba(38, 24, 12, 0)');
+    bCtx.fillStyle = bGrad;
+    bCtx.fillRect(0, 0, 128, 128);
+    const blobTex = new THREE.CanvasTexture(blobCanvas);
+    const blobGeo = new THREE.PlaneGeometry(1, 1);
+    const blobMats: THREE.MeshBasicMaterial[] = [];
+    const makeBlob = () => {
+      const mat = new THREE.MeshBasicMaterial({ map: blobTex, transparent: true, depthWrite: false, opacity: 0 });
+      blobMats.push(mat);
+      const m = new THREE.Mesh(blobGeo, mat);
+      m.visible = false;
+      scene.add(m);
+      return m;
     };
 
-    window.addEventListener('scroll', onScroll, { passive: true });
-    onScroll();
+    // Bóng đổ studio chuyên dụng cho tô (Chân thực, có chiều sâu, ánh sáng từ trên xuống)
+    const bowlShadowCanvas = document.createElement('canvas');
+    bowlShadowCanvas.width = 256;
+    bowlShadowCanvas.height = 256;
+    const bsCtx = bowlShadowCanvas.getContext('2d')!;
+    const bsGrad = bsCtx.createRadialGradient(128, 128, 0, 128, 128, 128);
+    // Vùng tiếp xúc chân tô (Core Ambient Occlusion): đậm, sắc nét, có chiều sâu chân thực
+    bsGrad.addColorStop(0, 'rgba(20, 13, 7, 0.88)');
+    bsGrad.addColorStop(0.20, 'rgba(24, 15, 8, 0.82)');
+    bsGrad.addColorStop(0.40, 'rgba(36, 22, 12, 0.58)');
+    bsGrad.addColorStop(0.68, 'rgba(48, 30, 18, 0.22)');
+    bsGrad.addColorStop(0.88, 'rgba(60, 38, 22, 0.05)');
+    bsGrad.addColorStop(1, 'rgba(60, 38, 22, 0)');
+    bsCtx.fillStyle = bsGrad;
+    bsCtx.fillRect(0, 0, 256, 256);
+    const bowlBlobTex = new THREE.CanvasTexture(bowlShadowCanvas);
 
-    let mouseX = 0;
-    let mouseY = 0;
-    const onMouseMove = (e: MouseEvent) => {
-      mouseX = (e.clientX / window.innerWidth - 0.5) * 0.45;
-      mouseY = (e.clientY / window.innerHeight - 0.5) * 0.22;
+    const bowlBlobMat = new THREE.MeshBasicMaterial({
+      map: bowlBlobTex,
+      transparent: true,
+      depthWrite: false,
+      opacity: 0,
+    });
+    const bowlBlob = new THREE.Mesh(blobGeo, bowlBlobMat);
+    bowlBlob.visible = false;
+    scene.add(bowlBlob);
+
+    const nutBlobs: THREE.Mesh[] = nutParticles.map(() => makeBlob());
+
+    // ========================================================
+    // 7. TRẠNG THÁI CUỘN TRANG & ĐO ĐẠC BỐ CỤC
+    // ========================================================
+    let smoothScroll = window.scrollY;
+    let maxScroll = 2000;
+    const refreshPageMetrics = () => {
+      maxScroll = Math.max(document.documentElement.scrollHeight - viewH, spillDist + 600);
     };
-    window.addEventListener('mousemove', onMouseMove, { passive: true });
 
     const onResize = () => {
-      if (!holder) return;
-      const width = holder.clientWidth;
-      const height = holder.clientHeight;
-      camera.aspect = width / height;
-      camera.updateProjectionMatrix();
-      renderer.setSize(width, height);
-
-      if (width < 768) {
-        camera.position.set(0, 3.1, 7.8);
-      } else if (width < 1024) {
-        camera.position.set(0, 2.8, 6.8);
-      } else {
-        camera.position.set(0, 2.7, 6.4);
-      }
-
-      currentBowlBaseX = getBaseX(width, height);
-      currentBowlBaseY = getBaseY(width, height);
+      updateProjection();
+      renderer.setSize(viewW, viewH);
+      measureLayout();
+      refreshPageMetrics();
     };
     window.addEventListener('resize', onResize);
     onResize();
 
+    // Chiều cao trang thay đổi (ảnh/section tải xong) → cập nhật lại quãng cuộn để hạt vẫn tới đúng footer
+    const resizeObserver = new ResizeObserver(() => {
+      measureLayout();
+      refreshPageMetrics();
+    });
+    resizeObserver.observe(document.body);
+    const metricsTimer = window.setInterval(() => {
+      measureLayout();
+      refreshPageMetrics();
+    }, 1000);
+
     // ========================================================
-    // 8. ANIMATION LOOP (PHYSICS SPILL + TILT)
+    // 8. ANIMATION LOOP (TÔ NGHIÊNG + HẠT LĂN XUỐNG TỚI FOOTER THEO CUỘN)
     // ========================================================
     let animationId: number;
     const clock = new THREE.Clock();
 
     const slerpQuat = new THREE.Quaternion();
     const rollQuat = new THREE.Quaternion();
+    const startWorld = new THREE.Vector3();
+    const targetWorld = new THREE.Vector3();
+    const localSlidePos = new THREE.Vector3();
+    const lipWorld = new THREE.Vector3();
+    const vExit = new THREE.Vector3();
+    const ctrlWorld = new THREE.Vector3();
+    const EXIT_LEN = 75; // Quãng cuộn (px) để hạt trượt từ lòng tô ra đến vành miệng
+
+    // Easing mềm: smootherstep (đạo hàm bậc 1, 2 bằng 0 ở hai đầu → không giật lúc bắt đầu/kết thúc)
+    const smoother = (t: number) => t * t * t * (t * (t * 6 - 15) + 10);
+    const smooth = (t: number) => t * t * (3 - 2 * t);
+    let lastTime = performance.now();
 
     const animate = () => {
       animationId = requestAnimationFrame(animate);
-      const delta = clock.getDelta();
+      const now = performance.now();
+      const dt = Math.min((now - lastTime) / 1000, 0.05);
+      lastTime = now;
       const elapsed = clock.getElapsedTime();
 
-      // Smooth scroll interpolation: giảm hệ số xuống 0.052 để tạo quán tính cuộn mượt mà như bơ (buttery smooth inertia)
-      currentScrollFraction += (targetScrollFraction - currentScrollFraction) * 0.052;
-      const p = currentScrollFraction;
+      // scrollY thực: dùng để neo vị trí vật thể vào trang (hạt đã nằm yên cuộn đúng cùng nội dung, không trễ)
+      const raw = window.scrollY;
+      // scroll làm mượt: phản hồi nhanh tức thì khi vừa cuộn, giữ quán tính mượt mà
+      // Làm mượt theo thời gian thực (độc lập FPS): màn 60Hz hay 120Hz đều mượt như nhau
+      smoothScroll += (raw - smoothScroll) * (1 - Math.exp(-dt * 9.5));
+      if (Math.abs(raw - smoothScroll) < 0.05) smoothScroll = raw;
+      const pLin = Math.min(Math.max(smoothScroll / spillDist, 0), 1);
+      // Tô nghiêng phản hồi sớm ngay từ những pixel cuộn đầu tiên, nghiêng mượt và dứt khoát
+      const p = 0.28 * pLin + 0.72 * smooth(pLin);
 
-      // Camera subtle parallax: khi cuộn, camera hơi chúc nhẹ góc nhìn xuống theo dòng hạt đổ tràn sang section dưới
-      camera.position.x += (mouseX - camera.position.x * 0.20) * 0.40;
-      const targetLookAtY = (currentBowlBaseY * 0.22) * (1 - p) + (-0.12 - 0.32 * p);
-      camera.lookAt(-0.30 * p, targetLookAtY, 0.42 * p);
+      // BOWL: nằm trên mặt bàn ảo ngang tầm chữ banner; khi cuộn thì nghiêng đổ sang trái
+      // Góc nghiêng rót vật lý chân thực:
+      // - Z nghiêng vừa đủ (~0.95 rad ≈ 54.4°) để các loại hạt tuôn trào mượt mà mà vẫn thấy trọn lòng tô
+      // - X và Y giữ miệng tô mở hướng về phía camera để người xem nhìn rõ dòng hạt đổ ra
+      const rotZ = 0.95 * p;
+      bowlGroup.rotation.z = rotZ;
+      bowlGroup.rotation.x = 0.60 + 0.10 * p;
+      bowlGroup.rotation.y = 0.08 * p;
 
-      // BOWL MOTION: Tô cố định ngang tầm chữ banner ở trạng thái nghỉ (p=0), khi cuộn nghiêng đổ mượt mà
-      const bowlRestX = currentBowlBaseX - 0.06 * p;
-      const bowlRestY = currentBowlBaseY - 0.50 * p;
-      const bowlRestZ = -0.2 * p;
-
+      // Cơ chế trụ điểm (Base Pivoting):
+      // Khi tô nghiêng sang trái, mép đáy bên trái làm điểm tựa tiếp xúc mặt bàn
+      // Nâng tâm tô nhẹ (+0.16 * p) để mép vành rót hạ thấp vừa vặn tự nhiên, không bị sụp xuống dưới
+      const pivotLiftY = 0.16 * p;
+      const pivotShiftX = -0.04 * p;
+      toWorld(bowlPageX, bowlPageY - raw, BOWL_Z, startWorld);
       bowlGroup.position.set(
-        bowlRestX,
-        bowlRestY + Math.sin(elapsed * 1.5) * 0.01 * (1 - p),
-        bowlRestZ
+        startWorld.x + pivotShiftX,
+        startWorld.y + pivotLiftY + Math.sin(elapsed * 1.5) * 0.012 * (1 - p),
+        startWorld.z
       );
+      const bowlScreenY = bowlPageY - raw;
+      const bowlPx = getBowlPx(viewW);
+      bowlGroup.visible = bowlScreenY > -bowlPx * 1.5 && bowlScreenY < viewH + bowlPx * 1.5;
 
-      // Contact shadow mờ dần khi tô bắt đầu nghiêng và nâng lên đổ hạt
-      contactMat.opacity = Math.max(0, 1 - p * 2.8);
+      // Bóng dưới tô (ánh sáng studio chiếu từ trên xuống):
+      // Đặt ngay tại mặt phẳng sát sau chân tô (Z = BOWL_Z - 0.08), đồng bộ toạ độ tiếp xúc
+      const shadowZ = BOWL_Z - 0.08;
+      const kShadow = (camDist - shadowZ) / camDist;
+      // Khi tô nghiêng, bóng bám theo điểm tựa tiếp xúc bên trái
+      const shadowPageX = bowlPageX - bowlPx * 0.08 * p;
+      const shadowPageY = bowlScreenY + bowlPx * (0.34 + 0.02 * p);
+      toWorld(shadowPageX, shadowPageY, shadowZ, startWorld);
+      bowlBlob.position.copy(startWorld);
+      // Kích thước elip bóng ôm sát chân tô, dãn nhẹ theo góc nghiêng
+      const shadowW = bowlPx * (0.82 + 0.12 * p) * wpp * kShadow;
+      const shadowH = bowlPx * (0.28 - 0.04 * p) * wpp * kShadow;
+      bowlBlob.scale.set(shadowW, shadowH, 1);
+      // Độ đậm rõ nét, chân thực (không bị mờ nhờn), chỉ giảm dần khi tô cuộn khuất khỏi viewport
+      const shadowFade = Math.max(0, 1 - 0.40 * p) * (bowlGroup.visible ? 1 : 0);
+      bowlBlobMat.opacity = 0.82 * shadowFade;
+      bowlBlob.visible = bowlGroup.visible && shadowFade > 0.01;
 
-      // Floor shadow chỉ hiện dần khi cuộn trang và các hạt bắt đầu đổ tràn xuống sàn (p=0 ẩn hoàn toàn)
-      floorMat.opacity = Math.min(0.26, p * 0.35);
+      // NUTS: mỗi hạt rời tô rồi lăn xuống vị trí riêng, trải dài đến tận footer
+      nutParticles.forEach((item, idx) => {
+        // Đợt 1 đổ sớm sang trái (khi tô vừa nghiêng); đợt 2 đổ sau khi tô đã nghiêng thêm rồi lăn dần xuống footer
+        const sStart = item.pour
+          ? spillDist * (0.01 + item.delay * 0.45)
+          : spillDist * (0.16 + item.delay * 0.65);
+        const sLandRaw = item.pour
+          ? spillDist * (0.75 + 0.45 * item.landT)
+          : item.landT > 0.7
+            ? maxScroll - item.landJitter
+            : spillDist + 120 + (maxScroll - spillDist - 120) * item.landT;
+        const sLand = Math.max(Math.min(sLandRaw, maxScroll), sStart + EXIT_LEN + (item.pour ? 110 : 200));
+        const uLin = Math.min(Math.max((smoothScroll - sStart) / (sLand - sStart), 0), 1);
+        const u = uLin;
 
-      // Tumble tilt angles (Nghiêng đổ sang TRÁI)
-      const targetRotZ = 1.16 * p; // roll onto left side
-      const targetRotX = 0.20 * (1 - p) + 0.60 * p; // mouth angles downward
-      const targetRotY = -0.40 * p;
-
-      bowlGroup.rotation.z = targetRotZ;
-      bowlGroup.rotation.x = targetRotX;
-      bowlGroup.rotation.y = targetRotY;
-
-      // NUTS BALLISTIC SPILL MOTION:
-      nutParticles.forEach((item) => {
-        // Quãng đường cuộn dài và êm ái hơn (spillSpan rộng hơn để không bị trôi vèo quá nhanh)
-        const spillSpan = Math.max(0.88 - item.delay, 0.45);
-        const localP = Math.min(Math.max((p - item.delay) / spillSpan, 0), 1);
-
-        if (localP <= 0.001) {
-          // Fixed inside bowl: di chuyển và xoay theo lòng tô
+        if (u <= 0.0005) {
+          // Còn nằm trong tô: vị trí và góc xoay nghiêng tự nhiên theo lòng tô
           item.mesh.position.copy(item.insidePos);
           item.mesh.position.applyEuler(bowlGroup.rotation);
           item.mesh.position.add(bowlGroup.position);
-          item.mesh.quaternion.copy(item.initialQuat);
+          item.mesh.quaternion.copy(bowlGroup.quaternion).multiply(item.initialQuat);
+          item.mesh.visible = bowlGroup.visible;
+          nutBlobs[idx].visible = false;
+          return;
+        }
+
+        // Điểm đáp: toạ độ TRANG cố định (sLand + landF * viewH) → cuộn cùng nội dung sau khi nằm yên
+        const targetPageY = sLand + item.landF * viewH;
+        toWorld(item.targetXFrac * viewW, targetPageY - raw, item.targetZ, targetWorld);
+
+        // Quãng cuộn trượt thoát tô: exitU từ 0 -> 1
+        const exitU = Math.min(Math.max((smoothScroll - sStart) / EXIT_LEN, 0), 1);
+
+        if (exitU < 1) {
+          // GIAI ĐOẠN 1: TRƯỢT MEN THEO LÒNG TÔ RA VÀNH MIỆNG (INSIDE-BOWL SLIDE)
+          // Hạt trượt trong hệ toạ độ cục bộ của tô, men theo mặt cong lòng tô ra điểm lipPosLocal riêng
+          const a = smooth(exitU);
+          // Uốn cong nhẹ lên trên theo mặt cong lòng tô để hạt lướt êm ái, chống xuyên đáy/thành tô
+          const lift = 0.04 * Math.sin(a * Math.PI);
+          localSlidePos.set(
+            (1 - a) * item.insidePos.x + a * item.lipPosLocal.x,
+            (1 - a) * item.insidePos.y + a * item.lipPosLocal.y + lift,
+            (1 - a) * item.insidePos.z + a * item.lipPosLocal.z
+          );
+          item.mesh.position.copy(localSlidePos).applyEuler(bowlGroup.rotation).add(bowlGroup.position);
+
+          // Hạt vừa nghiêng theo tô vừa lăn nhẹ dọc theo hướng trượt
+          slerpQuat.copy(bowlGroup.quaternion).multiply(item.initialQuat);
+          rollQuat.setFromAxisAngle(item.rollAxis, a * Math.PI * 1.2);
+          item.mesh.quaternion.copy(slerpQuat.multiply(rollQuat));
         } else {
-          // Chuyển động mượt mà tuyệt đỉnh (Quintic Smootherstep S-curve):
-          // Đạo hàm bậc 1 và bậc 2 tại điểm đầu và cuối đều bằng 0, loại bỏ hoàn toàn cảm giác giật nhanh ban đầu!
-          const easeOut = localP * localP * localP * (localP * (localP * 6 - 15) + 10);
+          // GIAI ĐOẠN 2: RƠI TỰ DO DẠNG PARABOL TRỌNG LỰC (GRAVITY CASCADE)
+          // Toạ độ điểm vượt vành miệng tô trong không gian thế giới
+          lipWorld.copy(item.lipPosLocal).applyEuler(bowlGroup.rotation).add(bowlGroup.position);
+          // Hướng quán tính văng ra ngoài miệng tô
+          vExit.copy(item.dirLocal).applyEuler(bowlGroup.rotation);
 
-          const startY = item.insidePos.y + bowlGroup.position.y;
-          const endY = item.targetPos.y;
-          // Độ nảy parabol êm dịu tự nhiên, không bật tung lên quá cao
-          const bounceArc = Math.sin(localP * Math.PI) * 0.22 * Math.max(1 - localP, 0);
+          const uB = Math.min(Math.max((smoothScroll - sStart - EXIT_LEN) / Math.max(sLand - sStart - EXIT_LEN, 1), 0), 1);
+          // Vận tốc tăng dần do trọng lực rồi giảm tốc êm khi tiếp đất
+          const eB = 0.40 * smooth(uB) + 0.60 * (1 - (1 - uB) * (1 - uB));
+          const q = 1 - eB;
 
-          const currentY = THREE.MathUtils.lerp(startY, endY, easeOut) + bounceArc;
-          const currentX = THREE.MathUtils.lerp(
-            item.insidePos.x + bowlGroup.position.x,
-            item.targetPos.x,
-            easeOut
+          // Điểm điều khiển quán tính văng tự nhiên ra khỏi mép vành tô
+          ctrlWorld.copy(lipWorld).addScaledVector(vExit, 0.75);
+
+          // Nảy nhẹ khi tiếp đất
+          const settle = Math.min(Math.max((uB - 0.84) / 0.16, 0), 1);
+          const bounce = Math.sin(settle * Math.PI) * 0.05 * (1 - settle);
+
+          item.mesh.position.set(
+            q * q * lipWorld.x + 2 * q * eB * ctrlWorld.x + eB * eB * targetWorld.x,
+            q * q * lipWorld.y + 2 * q * eB * ctrlWorld.y + eB * eB * targetWorld.y + bounce,
+            q * q * lipWorld.z + 2 * q * eB * ctrlWorld.z + eB * eB * targetWorld.z
           );
-          const currentZ = THREE.MathUtils.lerp(
-            item.insidePos.z + bowlGroup.position.z,
-            item.targetPos.z,
-            easeOut
-          );
 
-          item.mesh.position.set(currentX, currentY, currentZ);
-
-          // HIỆU ỨNG LĂN HỮU HẠN RỒI ĐỨNG YÊN HOÀN TOÀN (KHÔNG XOAY VÒNG VÒNG LIÊN TỤC):
-          // Góc lăn tính trực tiếp theo quãng đường lăn (easeOut). Khi dừng cuộn hoặc chạm đích thì hạt đứng yên!
-          slerpQuat.slerpQuaternions(item.initialQuat, item.finalQuat, easeOut);
-          rollQuat.setFromAxisAngle(item.rollAxis, easeOut * item.totalRollRadians);
+          // Xoay nhào lộn tự do trên không và dừng êm tại finalQuat khi tiếp đất
+          slerpQuat.slerpQuaternions(item.initialQuat, item.finalQuat, eB);
+          rollQuat.setFromAxisAngle(item.rollAxis, Math.PI * 1.2 + eB * item.totalRollRadians);
           item.mesh.quaternion.copy(slerpQuat.multiply(rollQuat));
         }
+
+        // Ẩn hạt nằm ngoài viewport để tiết kiệm GPU
+        const k = (camDist - item.mesh.position.z) / camDist;
+        const halfH = viewH * 0.5 * wpp * k + 0.8;
+        item.mesh.visible = Math.abs(item.mesh.position.y) < halfH;
+
+        // Bóng mềm ngay dưới hạt (ánh sáng từ trên xuống), hiện dần khi hạt vượt qua miệng tô
+        const r = nutRadii[idx];
+        const nz = item.mesh.position.z;
+        const bz = nz - 0.25;
+        const ratio = (camDist - bz) / (camDist - nz);
+        const blob = nutBlobs[idx];
+        blob.position.set(
+          item.mesh.position.x * ratio + r * 0.12,
+          item.mesh.position.y * ratio - r * 1.05,
+          bz
+        );
+        blob.scale.set(r * 2.7 * ratio, r * 1.7 * ratio, 1);
+        const shadowOpacity = exitU < 0.6 ? 0 : smooth(Math.min((exitU - 0.6) / 0.4, 1)) * 0.48;
+        (blob.material as THREE.MeshBasicMaterial).opacity = shadowOpacity;
+        blob.visible = item.mesh.visible && shadowOpacity > 0.01;
       });
 
       renderer.render(scene, camera);
@@ -968,9 +1114,9 @@ export default function FooterSpillingBowl3D() {
     // ========================================================
     return () => {
       cancelAnimationFrame(animationId);
-      window.removeEventListener('scroll', onScroll);
-      window.removeEventListener('mousemove', onMouseMove);
       window.removeEventListener('resize', onResize);
+      resizeObserver.disconnect();
+      window.clearInterval(metricsTimer);
 
       if (holder && renderer.domElement) {
         holder.removeChild(renderer.domElement);
@@ -978,18 +1124,21 @@ export default function FooterSpillingBowl3D() {
 
       // Dispose geometries
       bowlGeo.dispose();
-      contactShadowGeo.dispose();
       almondGeo.dispose();
       maccaGeo.dispose();
       cashewGeo.dispose();
       walnutGeo.dispose();
       pumpkinGeo.dispose();
       floorGeo.dispose();
+      blobGeo.dispose();
+      blobTex.dispose();
+      bowlBlobTex.dispose();
+      bowlBlobMat.dispose();
+      blobMats.forEach((m) => m.dispose());
 
       // Dispose textures & materials
       envTexture.dispose();
       kraftBowlTex.dispose();
-      contactTex.dispose();
       almondSkinTex.dispose();
       cashewSkinTex.dispose();
       macadamiaShellTex.dispose();
@@ -997,7 +1146,6 @@ export default function FooterSpillingBowl3D() {
       pumpkinSeedTex.dispose();
 
       bowlMat.dispose();
-      contactMat.dispose();
       almondMat.dispose();
       maccaMat.dispose();
       cashewMat.dispose();
@@ -1011,44 +1159,92 @@ export default function FooterSpillingBowl3D() {
   return (
     <section
       ref={containerRef}
-      className="relative w-full min-h-[460px] sm:min-h-[500px] lg:min-h-[540px] py-14 lg:py-24 bg-slate-50 dark:bg-[#060911] border-b border-slate-200/30 dark:border-slate-800/30 overflow-visible select-none flex items-center z-20"
+      className="relative w-full min-h-screen min-h-[100dvh] pt-20 pb-12 lg:pb-16 bg-slate-50 dark:bg-[#060911] border-b border-slate-200/30 dark:border-slate-800/30 overflow-hidden select-none flex items-center z-20"
+      style={{
+        backgroundColor: bannerConfig.backgroundColor || undefined,
+        minHeight: '100vh',
+      }}
     >
-      {/* 1. Subtle Radial Ambient Lighting */}
-      <div className="absolute inset-0 bg-radial from-amber-500/5 via-transparent to-transparent pointer-events-none" />
+      {/* 0. Dynamic Background Image Layer (from Admin Banner Config) */}
+      {bannerConfig.backgroundImageUrl ? (
+        <div className="absolute inset-0 overflow-hidden pointer-events-none z-0">
+          <img
+            src={bannerConfig.backgroundImageUrl}
+            alt="Banner Background"
+            className="w-full h-full object-cover object-center"
+          />
+          {/* Contrast Overlay Gradient: ensures text on left is 100% crisp and readable while 3D bowl blends harmoniously */}
+          <div
+            className={`absolute inset-0 ${
+              bannerConfig.backgroundOverlay === 'dark'
+                ? 'bg-black/60'
+                : bannerConfig.backgroundOverlay === 'light'
+                ? 'bg-white/75 dark:bg-black/75'
+                : bannerConfig.backgroundOverlay === 'none'
+                ? ''
+                : 'bg-gradient-to-r from-white/95 via-white/85 to-white/30 dark:from-[#060911]/95 dark:via-[#060911]/85 dark:to-[#060911]/40'
+            }`}
+          />
+        </div>
+      ) : (
+        /* 1. Subtle Radial Ambient Lighting when no custom background image */
+        <div className="absolute inset-0 bg-radial from-amber-500/5 via-transparent to-transparent pointer-events-none z-0" />
+      )}
 
       {/* 2. Text Content (Brand Story & Call to Action) - z-10 */}
       <div className="max-w-[1400px] w-full mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
-        <div className="max-w-md lg:max-w-lg space-y-4">
-          <span className="text-xs font-bold text-emerald-800 dark:text-emerald-400 tracking-widest uppercase">
-            100% Nông Sản Mộc Tươi Mới
-          </span>
-          <h2 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold text-slate-900 dark:text-white leading-tight tracking-tight">
-            Trọn Vẹn Vị Ngọt Tự Nhiên
-          </h2>
-          <p className="text-sm sm:text-base text-slate-600 dark:text-slate-400 leading-relaxed max-w-md">
-            Hạt điều rang củi nguyên vỏ lụa Bình Phước, macca nứt vỏ gỗ Tây Nguyên, hạnh nhân hổ phách nguyên vỏ mộc và óc chó sấy nhiệt thấp. Giữ trọn 100% hương vị và tinh dầu quý giá.
-          </p>
-
-          <div className="pt-2 flex flex-wrap items-center gap-4 relative z-30 pointer-events-auto">
-            <Link
-              href="/products"
-              className="inline-flex items-center gap-2 px-6 py-3 rounded-full bg-slate-900 hover:bg-slate-800 dark:bg-white dark:hover:bg-slate-100 text-white dark:text-slate-900 text-xs font-bold transition-all shadow-xs"
-            >
-              <span>Khám Phá Bộ Sưu Tập</span>
-              <ArrowRight className="w-3.5 h-3.5" />
-            </Link>
-            <span className="text-xs text-slate-500 font-medium">
-              Sấy mộc 60°C • Giữ nguyên lớp vỏ tự nhiên
+        <div className="max-w-md lg:max-w-xl space-y-4">
+          {/* Tagline / Huy hiệu (chỉ hiện khi có nội dung và không phải khoảng trắng) */}
+          {Boolean(bannerConfig.tagline && bannerConfig.tagline.trim().length > 0) && (
+            <span className="text-xs sm:text-sm font-black text-emerald-300 uppercase tracking-widest inline-block drop-shadow-[0_2px_8px_rgba(0,0,0,0.9)]">
+              {bannerConfig.tagline}
             </span>
-          </div>
+          )}
+
+          {/* Dòng chữ Tiêu đề chính: Độ dày đậm nét & Màu xanh ngọc rực rỡ */}
+          {(bannerConfig.title || 'Trọn Vẹn Vị Ngọt Tự Nhiên') && (
+            <h2 className="text-4xl sm:text-5xl lg:text-6xl font-black text-emerald-400 leading-[1.12] tracking-tight drop-shadow-[0_3px_14px_rgba(0,0,0,0.95)]">
+              {bannerConfig.title || 'Trọn Vẹn Vị Ngọt Tự Nhiên'}
+            </h2>
+          )}
+
+          {/* Mô tả chi tiết (chỉ hiện khi người dùng nhập nội dung, để trống sẽ tự động ẩn) */}
+          {Boolean(bannerConfig.description && bannerConfig.description.trim().length > 0) && (
+            <p className="text-sm sm:text-base text-emerald-100 font-semibold leading-relaxed max-w-lg drop-shadow-[0_2px_8px_rgba(0,0,0,0.9)]">
+              {bannerConfig.description}
+            </p>
+          )}
+
+          {/* Cụm Nút bấm CTA & Dòng cam kết nổi bật (chỉ hiện khi có ít nhất một trong hai) */}
+          {Boolean(
+            (bannerConfig.buttonText && bannerConfig.buttonText.trim().length > 0) ||
+            (bannerConfig.highlightText && bannerConfig.highlightText.trim().length > 0)
+          ) && (
+            <div className="pt-2 flex flex-wrap items-center gap-4 relative z-30 pointer-events-auto">
+              {Boolean(bannerConfig.buttonText && bannerConfig.buttonText.trim().length > 0) && (
+                <Link
+                  href={bannerConfig.buttonLink || '/products'}
+                  className="inline-flex items-center gap-2 px-7 py-3.5 rounded-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-black transition-all shadow-xl shadow-black/50 cursor-pointer hover:scale-105 active:scale-95"
+                >
+                  <span>{bannerConfig.buttonText}</span>
+                  <ArrowRight className="w-4 h-4 stroke-[2.5]" />
+                </Link>
+              )}
+              {Boolean(bannerConfig.highlightText && bannerConfig.highlightText.trim().length > 0) && (
+                <span className="text-xs text-emerald-300 font-bold drop-shadow-[0_2px_6px_rgba(0,0,0,0.9)]">
+                  {bannerConfig.highlightText}
+                </span>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
       {/* 3. Interactive 3D Nut Bowl Canvas - TRÀN SÂU XUỐNG SECTION DƯỚI & PHỦ LÊN CARD (z-30) */}
       <div
         ref={canvasHolderRef}
-        className="absolute top-0 left-0 w-full h-[calc(100%+320px)] sm:h-[calc(100%+380px)] lg:h-[calc(100%+450px)] z-30 pointer-events-none overflow-visible"
-        title="Cuộn trang để thấy tô hạt nghiêng và các hạt rơi tự nhiên tràn xuống section dưới"
+        className="fixed inset-0 w-screen h-screen z-30 pointer-events-none overflow-hidden"
+        title="Cuộn trang để thấy tô hạt nghiêng và các hạt lăn xuống tận footer"
       />
 
       {/* Hint Tag */}

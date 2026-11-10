@@ -74,9 +74,9 @@ export default function ProductCard({ product }: ProductCardProps) {
               {product.name}
             </h3>
             <div className="text-sm font-black text-slate-900 dark:text-white shrink-0">
-              {typeof product.price === 'number' && product.price > 1000
+              {typeof product.price === 'number'
                 ? `${product.price.toLocaleString('vi-VN')}₫`
-                : `$${product.price || '12.99'}`}
+                : `${(Number(product.price) || 0).toLocaleString('vi-VN')}₫`}
             </div>
           </div>
         </div>

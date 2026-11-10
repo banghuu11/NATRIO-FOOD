@@ -41,5 +41,14 @@ export class DashboardController {
   getRecentOrders(@Query('limit') limit?: number) {
     return this.dashboardService.getRecentOrders(limit ? Number(limit) : 10);
   }
+
+  @Get('analytics')
+  @Roles('admin', 'staff')
+  @ApiOperation({
+    summary: 'Báo cáo doanh thu & phân tích kinh doanh cho trang /admin/analytics',
+  })
+  getAnalytics() {
+    return this.dashboardService.getAnalytics();
+  }
 }
 

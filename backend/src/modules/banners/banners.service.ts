@@ -8,10 +8,17 @@ export class BannersService {
 
   // In-memory active hero banner configuration with rich initial defaults
   private heroBannerConfig: UpdateHeroBannerDto = {
-    title: 'Artisan Granola',
-    subtitle: 'An organic healthy food, roasted nuts, and warm botanical.',
+    tagline: '100% Nông Sản Mộc Tươi Mới',
+    title: 'Trọn Vẹn Vị Ngọt Tự Nhiên',
+    subtitle: 'Dinh dưỡng thuần khiết từ các loại hạt sấy mộc tự nhiên.',
+    description: 'Hạt điều rang củi nguyên vỏ lụa Bình Phước, macca nứt vỏ gỗ Tây Nguyên, hạnh nhân hổ phách nguyên vỏ mộc và óc chó sấy nhiệt thấp. Giữ trọn 100% hương vị và tinh dầu quý giá.',
     vnDescription: 'Thực phẩm hữu cơ lành mạnh, hạt sấy mộc và thảo mộc tự nhiên.',
-    mode: BannerRenderMode.IMAGE,
+    buttonText: 'Khám Phá Bộ Sưu Tập',
+    buttonLink: '/products',
+    highlightText: 'Sấy mộc 60°C • Giữ nguyên lớp vỏ tự nhiên',
+    backgroundImageUrl: 'https://images.unsplash.com/photo-1448375240586-882707db888b?auto=format&fit=crop&w=1920&q=80',
+    backgroundOverlay: 'gradient',
+    mode: BannerRenderMode.MODEL_3D,
     imageUrl: 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=85',
     model3dType: Model3DType.NUT_BOWL,
     enable3dRotation: true,
@@ -66,12 +73,19 @@ export class BannersService {
       });
 
       const payload = JSON.stringify({
-        subtitle: dto.subtitle,
-        vnDescription: dto.vnDescription,
-        mode: dto.mode,
-        model3dType: dto.model3dType,
-        enable3dRotation: dto.enable3dRotation,
-        backgroundColor: dto.backgroundColor,
+        tagline: dto.tagline ?? this.heroBannerConfig.tagline,
+        subtitle: dto.subtitle ?? this.heroBannerConfig.subtitle,
+        description: dto.description ?? this.heroBannerConfig.description,
+        vnDescription: dto.vnDescription ?? this.heroBannerConfig.vnDescription,
+        buttonText: dto.buttonText ?? this.heroBannerConfig.buttonText,
+        buttonLink: dto.buttonLink ?? this.heroBannerConfig.buttonLink,
+        highlightText: dto.highlightText ?? this.heroBannerConfig.highlightText,
+        backgroundImageUrl: dto.backgroundImageUrl ?? this.heroBannerConfig.backgroundImageUrl,
+        backgroundOverlay: dto.backgroundOverlay ?? this.heroBannerConfig.backgroundOverlay,
+        mode: dto.mode ?? this.heroBannerConfig.mode,
+        model3dType: dto.model3dType ?? this.heroBannerConfig.model3dType,
+        enable3dRotation: dto.enable3dRotation ?? this.heroBannerConfig.enable3dRotation,
+        backgroundColor: dto.backgroundColor ?? this.heroBannerConfig.backgroundColor,
       });
 
       if (existing) {
