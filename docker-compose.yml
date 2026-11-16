@@ -54,7 +54,7 @@ services:
     environment:
       NODE_ENV: production
       PORT: 5001
-      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-nutrio_password_2026}@postgres:5432/${POSTGRES_DB:-nutrio_db}?schema=public
+      DATABASE_URL: ${DATABASE_URL:-postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-nutrio_password_2026}@postgres:5432/${POSTGRES_DB:-nutrio_db}?schema=public}
       JWT_SECRET: ${JWT_SECRET:-nutrio_healthy_food_jwt_super_secret_key_2026}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
       SEPAY_ENV: ${SEPAY_ENV:-sandbox}
