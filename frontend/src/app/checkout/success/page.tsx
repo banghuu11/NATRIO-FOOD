@@ -21,7 +21,7 @@ import {
   ChevronRight,
 } from 'lucide-react';
 
-export default function CheckoutSuccessPage() {
+function CheckoutSuccessContent() {
   const searchParams = useSearchParams();
   const orderCode = searchParams.get('orderCode') || searchParams.get('orderNumber');
   const gateway = searchParams.get('gateway');
@@ -267,5 +267,19 @@ export default function CheckoutSuccessPage() {
 
       <Footer />
     </div>
+  );
+}
+
+export default function CheckoutSuccessPage() {
+  return (
+    <React.Suspense
+      fallback={
+        <div className="min-h-screen bg-[#ffffff] flex items-center justify-center">
+          <Loader2 className="w-8 h-8 animate-spin text-[#4A7C59]" />
+        </div>
+      }
+    >
+      <CheckoutSuccessContent />
+    </React.Suspense>
   );
 }
