@@ -17,7 +17,7 @@ RUN npm ci
 # 3. Builder Stage
 # ==========================================
 FROM base AS builder
-ENV DATABASE_URL="postgresql://postgres:nutrio_password_2026@localhost:5432/nutrio_db?schema=public"
+ENV DATABASE_URL="postgresql://postgres.youqyeuwrppkxxrqpevu:Huubang%4007123@aws-0-ap-south-1.pooler.supabase.com:5432/postgres?schema=public"
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npx prisma generate
@@ -29,6 +29,9 @@ RUN npm run build
 FROM base AS runner
 ENV NODE_ENV=production
 ENV PORT=5001
+ENV DATABASE_URL="postgresql://postgres.youqyeuwrppkxxrqpevu:Huubang%4007123@aws-0-ap-south-1.pooler.supabase.com:5432/postgres?schema=public"
+ENV JWT_SECRET="nutrio_healthy_food_jwt_super_secret_key_2026"
+ENV JWT_EXPIRES_IN="7d"
 
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
