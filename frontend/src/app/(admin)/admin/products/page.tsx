@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Package,
   Plus,
@@ -16,6 +16,9 @@ import {
   AlertCircle,
   Save,
   Check,
+  Upload,
+  Star,
+  Image as ImageIcon,
 } from 'lucide-react';
 import {
   productService,
@@ -24,6 +27,7 @@ import {
   CreateProductPayload,
   UpdateProductPayload,
 } from '@/services/product.service';
+import { uploadService } from '@/services/upload.service';
 
 export default function AdminProductsPage() {
   const [products, setProducts] = useState<ProductItem[]>([]);
@@ -52,7 +56,7 @@ export default function AdminProductsPage() {
     shelfLifeDays: 180,
     nutriScoreGrade: 'A',
     isFeatured: false,
-    imageUrls: ['https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=600&q=80'],
+    imageUrls: [],
     initialVariant: {
       sku: '',
       name: 'Túi 500g',
@@ -72,6 +76,61 @@ export default function AdminProductsPage() {
       sodiumMg: 15,
     },
   });
+
+  const [isUploadingImages, setIsUploadingImages] = useState(false);
+  const productImagesRef = useRef<HTMLInputElement>(null);
+
+  const handleProductImagesUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+
+    const invalidFile = files.find((f) => !f.type.startsWith('image/'));
+    if (invalidFile) {
+      alert('Vui lòng chỉ chọn các tệp hình ảnh (JPG, PNG, WEBP)');
+      return;
+    }
+
+    const oversized = files.find((f) => f.size > 8 * 1024 * 1024);
+    if (oversized) {
+      alert('Mỗi tệp hình ảnh không được vượt quá 8MB');
+      return;
+    }
+
+    setIsUploadingImages(true);
+    try {
+      const res = await uploadService.uploadMultiple(files);
+      setCreateForm((prev) => ({
+        ...prev,
+        imageUrls: [...(prev.imageUrls || []), ...res.urls],
+      }));
+      setToastMessage(`Đã tải lên ${res.urls.length} ảnh thành công!`);
+      setTimeout(() => setToastMessage(null), 3000);
+    } catch (err: any) {
+      console.error('Lỗi tải ảnh sản phẩm:', err);
+      alert(err.response?.data?.message || 'Không thể tải ảnh lên');
+    } finally {
+      setIsUploadingImages(false);
+      if (productImagesRef.current) {
+        productImagesRef.current.value = '';
+      }
+    }
+  };
+
+  const handleRemoveProductImage = (index: number) => {
+    setCreateForm((prev) => ({
+      ...prev,
+      imageUrls: (prev.imageUrls || []).filter((_, i) => i !== index),
+    }));
+  };
+
+  const handleSetPrimaryImage = (index: number) => {
+    setCreateForm((prev) => {
+      const urls = [...(prev.imageUrls || [])];
+      const [selected] = urls.splice(index, 1);
+      urls.unshift(selected);
+      return { ...prev, imageUrls: urls };
+    });
+  };
 
   // Form state for Edit
   const [editForm, setEditForm] = useState<{
@@ -637,16 +696,125 @@ export default function AdminProductsPage() {
                 </div>
               </div>
 
-              {/* Image URL */}
+              {/* Multi-Image Upload (Tải lên từ máy tính) */}
               <div>
-                <label className="text-xs font-bold text-slate-700 block mb-1">Link Ảnh Sản Phẩm (URL)</label>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                    <ImageIcon className="w-4 h-4 text-emerald-600" />
+                    <span>Hình Ảnh Sản Phẩm (Tải từ máy tính - Hỗ trợ nhiều ảnh)</span>
+                  </label>
+                  <span className="text-[11px] text-slate-500 font-medium">
+                    Đã tải: <strong>{createForm.imageUrls?.length || 0}</strong> ảnh
+                  </span>
+                </div>
+
                 <input
-                  type="url"
-                  value={createForm.imageUrls?.[0] || ''}
-                  onChange={(e) => setCreateForm({ ...createForm, imageUrls: [e.target.value] })}
-                  className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:bg-white outline-none"
-                  placeholder="https://..."
+                  type="file"
+                  multiple
+                  accept="image/*"
+                  ref={productImagesRef}
+                  onChange={handleProductImagesUpload}
+                  className="hidden"
                 />
+
+                {/* Gallery Grid */}
+                {createForm.imageUrls && createForm.imageUrls.length > 0 ? (
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-3 sm:grid-cols-4 gap-2.5 max-h-56 overflow-y-auto p-2 border border-slate-200 rounded-2xl bg-slate-50/60">
+                      {createForm.imageUrls.map((url, idx) => (
+                        <div
+                          key={idx}
+                          className="relative aspect-square rounded-xl overflow-hidden border border-slate-200 group bg-white shadow-xs"
+                        >
+                          <img
+                            src={url}
+                            alt={`Ảnh ${idx + 1}`}
+                            className="w-full h-full object-cover"
+                          />
+
+                          {/* Badge Ảnh đại diện */}
+                          {idx === 0 ? (
+                            <div className="absolute top-1 left-1 bg-emerald-700 text-white text-[9px] font-black px-1.5 py-0.5 rounded shadow-xs flex items-center gap-0.5">
+                              <Star className="w-2.5 h-2.5 fill-current" />
+                              <span>Ảnh bìa</span>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleSetPrimaryImage(idx)}
+                              className="absolute top-1 left-1 bg-black/60 hover:bg-emerald-700 text-white text-[9px] font-bold px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100 transition shadow-xs cursor-pointer"
+                              title="Đặt làm ảnh bìa"
+                            >
+                              Làm bìa
+                            </button>
+                          )}
+
+                          {/* Nút xóa ảnh */}
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveProductImage(idx)}
+                            className="absolute top-1 right-1 p-1 bg-rose-600 hover:bg-rose-700 text-white rounded-lg opacity-0 group-hover:opacity-100 transition shadow-xs cursor-pointer"
+                            title="Xóa ảnh này"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ))}
+
+                      {/* Nút Thêm ảnh tiếp */}
+                      <button
+                        type="button"
+                        onClick={() => productImagesRef.current?.click()}
+                        disabled={isUploadingImages}
+                        className="aspect-square rounded-xl border-2 border-dashed border-slate-300 hover:border-emerald-500 bg-white hover:bg-emerald-50/30 flex flex-col items-center justify-center gap-1 text-slate-500 hover:text-emerald-700 transition cursor-pointer"
+                      >
+                        {isUploadingImages ? (
+                          <Loader2 className="w-5 h-5 animate-spin text-emerald-600" />
+                        ) : (
+                          <>
+                            <Plus className="w-5 h-5" />
+                            <span className="text-[10px] font-bold">Thêm ảnh</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+
+                    <div className="flex items-center justify-between text-[11px] text-slate-500">
+                      <span>* Ảnh đầu tiên ("Ảnh bìa") sẽ dùng làm ảnh đại diện chính của sản phẩm.</span>
+                      <button
+                        type="button"
+                        onClick={() => setCreateForm({ ...createForm, imageUrls: [] })}
+                        className="text-rose-600 hover:underline font-semibold"
+                      >
+                        Xóa tất cả
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div
+                    onClick={() => productImagesRef.current?.click()}
+                    className="border-2 border-dashed border-slate-300 hover:border-emerald-500 rounded-2xl p-5 text-center bg-slate-50/60 hover:bg-emerald-50/20 transition cursor-pointer flex flex-col items-center justify-center gap-1.5"
+                  >
+                    {isUploadingImages ? (
+                      <div className="py-2 flex flex-col items-center gap-2">
+                        <Loader2 className="w-6 h-6 animate-spin text-emerald-600" />
+                        <span className="text-xs font-bold text-slate-600">Đang tải ảnh lên...</span>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center">
+                          <Upload className="w-4 h-4" />
+                        </div>
+                        <div className="text-xs font-bold text-slate-800">
+                          Nhấn để chọn ảnh từ máy tính (Có thể chọn nhiều ảnh cùng lúc)
+                        </div>
+                        <div className="text-[11px] text-slate-400">
+                          Hỗ trợ JPG, PNG, WEBP tối đa 8MB / ảnh
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Submit Buttons */}

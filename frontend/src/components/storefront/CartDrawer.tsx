@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import Link from 'next/link';
 import { 
   X, 
   Trash2, 
@@ -168,13 +169,14 @@ export default function CartDrawer({ isOpen, onClose }: CartDrawerProps) {
               <span className="font-black text-lg text-[#2C3E30]">{totalPrice.toLocaleString('vi-VN')}₫</span>
             </div>
 
-            <button
-              type="button"
-              className="w-full py-3.5 rounded-2xl bg-[#5F7E66] hover:bg-[#4E6B55] text-white font-black text-xs sm:text-sm tracking-wide uppercase shadow-sm hover:shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer"
+            <Link
+              href="/checkout"
+              onClick={onClose}
+              className="w-full py-3.5 rounded-2xl bg-[#064e3b] hover:bg-[#053d2e] text-white font-black text-xs sm:text-sm tracking-wide uppercase shadow-sm hover:shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer"
             >
               <span>TIẾN HÀNH ĐẶT HÀNG</span>
               <ArrowRight className="w-4 h-4" />
-            </button>
+            </Link>
 
             <div className="flex items-center justify-center gap-1 text-[11px] text-stone-400 font-medium">
               <ShieldCheck className="w-3.5 h-3.5 text-[#5F7E66]" />

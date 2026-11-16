@@ -31,6 +31,11 @@ export class CreateOrderDto {
   @IsNotEmpty()
   phone: string;
 
+  @ApiPropertyOptional({ example: 'lan.nguyen@example.com', description: 'Email người nhận' })
+  @IsOptional()
+  @IsString()
+  email?: string;
+
   @ApiProperty({ example: 'TP. Hồ Chí Minh', description: 'Tỉnh / Thành phố' })
   @IsString()
   @IsNotEmpty()

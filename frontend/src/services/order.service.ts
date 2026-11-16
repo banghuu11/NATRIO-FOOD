@@ -3,6 +3,7 @@ import { apiClient } from '@/lib/api/axios';
 export interface CreateOrderPayload {
   recipientName: string;
   phone: string;
+  email?: string;
   province: string;
   district: string;
   ward: string;
@@ -47,6 +48,21 @@ export interface AdminOrderListItem {
 export const orderService = {
   async createOrder(data: CreateOrderPayload) {
     const response = await apiClient.post('/orders', data);
+    return response.data;
+  },
+
+  async createSepayCheckout(orderId: number) {
+    const response = await apiClient.post(`/orders/${orderId}/sepay/checkout`);
+    return response.data;
+  },
+
+  async getOrderByOrderNumber(orderNumber: string) {
+    const response = await apiClient.get(`/orders/lookup/${orderNumber}`);
+    return response.data;
+  },
+
+  async getPaymentStatus(orderId: number) {
+    const response = await apiClient.get(`/orders/${orderId}/payment-status`);
     return response.data;
   },
 

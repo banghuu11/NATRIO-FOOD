@@ -304,12 +304,13 @@ export default function FooterSpillingBowl3D() {
       const cw = Math.min(viewW, 1400);
       const pad = viewW < 640 ? 16 : viewW < 1024 ? 24 : 32;
       if (viewW < 768) {
-        bowlPageX = viewW - pad - bowlPx * 0.5;
-        bowlPageY = top + r.height - bowlPx * 0.42;
+        // Mobile: dịch nhẹ sang trái và nhích xuống thêm
+        bowlPageX = viewW * 0.48;
+        bowlPageY = top + r.height - bowlPx * 0.28;
       } else {
-        // Căn vào cột phải của container max-w-[1400px], ngang tầm khối chữ banner
-        bowlPageX = viewW / 2 + cw / 2 - pad - bowlPx * 0.5 - 10;
-        bowlPageY = top + r.height * 0.5 + 6;
+        // Desktop: Căn cột phải, nhích sang trái (-85px) và nhích xuống thêm (+92px)
+        bowlPageX = viewW / 2 + cw / 2 - pad - bowlPx * 0.5 - 85;
+        bowlPageY = top + r.height * 0.5 + 92;
       }
       spillDist = Math.max(r.height * 0.48, 230);
     };
@@ -951,13 +952,15 @@ export default function FooterSpillingBowl3D() {
 
       // scrollY thực: dùng để neo vị trí vật thể vào trang (hạt đã nằm yên cuộn đúng cùng nội dung, không trễ)
       const raw = window.scrollY;
-      // scroll làm mượt: phản hồi nhanh tức thì khi vừa cuộn, giữ quán tính mượt mà
-      // Làm mượt theo thời gian thực (độc lập FPS): màn 60Hz hay 120Hz đều mượt như nhau
-      smoothScroll += (raw - smoothScroll) * (1 - Math.exp(-dt * 9.5));
+      // scroll làm mượt: phản hồi siêu nhạy ngay lập tức khi vừa chớm cuộn (hệ số 24.0 giúp không bị trễ)
+      smoothScroll += (raw - smoothScroll) * (1 - Math.exp(-dt * 24.0));
       if (Math.abs(raw - smoothScroll) < 0.05) smoothScroll = raw;
-      const pLin = Math.min(Math.max(smoothScroll / spillDist, 0), 1);
-      // Tô nghiêng phản hồi sớm ngay từ những pixel cuộn đầu tiên, nghiêng mượt và dứt khoát
-      const p = 0.28 * pLin + 0.72 * smooth(pLin);
+
+      // Quãng cuộn để tô ngã: cực nhạy, vừa scroll là tô ngã ngay (~180px)
+      const tiltDist = Math.max(Math.min(viewH * 0.26, 200), 160);
+      const pTilt = Math.min(Math.max(smoothScroll / tiltDist, 0), 1);
+      // Đường cong ease-out nhạy bén: ngay 10-20px cuộn đầu tiên tô đã nghiêng đổ rõ rệt
+      const p = 1 - Math.pow(1 - pTilt, 1.8);
 
       // BOWL: nằm trên mặt bàn ảo ngang tầm chữ banner; khi cuộn thì nghiêng đổ sang trái
       // Góc nghiêng rót vật lý chân thực:
@@ -1003,10 +1006,10 @@ export default function FooterSpillingBowl3D() {
 
       // NUTS: mỗi hạt rời tô rồi lăn xuống vị trí riêng, trải dài đến tận footer
       nutParticles.forEach((item, idx) => {
-        // Đợt 1 đổ sớm sang trái (khi tô vừa nghiêng); đợt 2 đổ sau khi tô đã nghiêng thêm rồi lăn dần xuống footer
+        // Đợt 1 đổ sớm sang trái ngay khi tô vừa chớm nghiêng; đợt 2 nối tiếp nhịp nhàng
         const sStart = item.pour
-          ? spillDist * (0.01 + item.delay * 0.45)
-          : spillDist * (0.16 + item.delay * 0.65);
+          ? tiltDist * (0.01 + item.delay * 0.35)
+          : tiltDist * (0.12 + item.delay * 0.55);
         const sLandRaw = item.pour
           ? spillDist * (0.75 + 0.45 * item.landT)
           : item.landT > 0.7
@@ -1055,8 +1058,10 @@ export default function FooterSpillingBowl3D() {
           // GIAI ĐOẠN 2: RƠI TỰ DO DẠNG PARABOL TRỌNG LỰC (GRAVITY CASCADE)
           // Toạ độ điểm vượt vành miệng tô trong không gian thế giới
           lipWorld.copy(item.lipPosLocal).applyEuler(bowlGroup.rotation).add(bowlGroup.position);
-          // Hướng quán tính văng ra ngoài miệng tô
+          // Hướng quán tính văng ra ngoài miệng tô: hướng xuống dưới và sang trái theo trọng lực
           vExit.copy(item.dirLocal).applyEuler(bowlGroup.rotation);
+          // Đảm bảo quỹ đạo luôn chúc xuống dưới tự nhiên, không văng ngược lên trên
+          vExit.y = -Math.abs(vExit.y) * 0.5 - 0.20;
 
           const uB = Math.min(Math.max((smoothScroll - sStart - EXIT_LEN) / Math.max(sLand - sStart - EXIT_LEN, 1), 0), 1);
           // Vận tốc tăng dần do trọng lực rồi giảm tốc êm khi tiếp đất
@@ -1064,7 +1069,7 @@ export default function FooterSpillingBowl3D() {
           const q = 1 - eB;
 
           // Điểm điều khiển quán tính văng tự nhiên ra khỏi mép vành tô
-          ctrlWorld.copy(lipWorld).addScaledVector(vExit, 0.75);
+          ctrlWorld.copy(lipWorld).addScaledVector(vExit, 0.55);
 
           // Nảy nhẹ khi tiếp đất
           const settle = Math.min(Math.max((uB - 0.84) / 0.16, 0), 1);
@@ -1247,10 +1252,7 @@ export default function FooterSpillingBowl3D() {
         title="Cuộn trang để thấy tô hạt nghiêng và các hạt lăn xuống tận footer"
       />
 
-      {/* Hint Tag */}
-      <div className="absolute bottom-3 right-6 z-30 text-[11px] font-medium text-slate-400 dark:text-slate-500 bg-white/70 dark:bg-slate-900/70 backdrop-blur-xs px-3 py-1 rounded-full border border-slate-200/50 dark:border-slate-800/50 pointer-events-none">
-        Tô hạt tương tác 3D theo thao tác cuộn
-      </div>
+    
     </section>
   );
 }

@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Headers, Param, ParseIntPipe, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { OrdersService } from './orders.service';
 import { CreateOrderDto } from './dto/order.dto';
@@ -9,14 +9,13 @@ import { CurrentUser, CurrentUserPayload } from '../../common/decorators/current
 
 @ApiTags('Orders')
 @Controller('orders')
-@UseGuards(JwtAuthGuard)
-@ApiBearerAuth('JWT-auth')
 export class OrdersController {
   constructor(private readonly ordersService: OrdersService) {}
 
   @Get('admin/all')
-  @UseGuards(RolesGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('admin', 'staff')
+  @ApiBearerAuth('JWT-auth')
   @ApiOperation({ summary: '[ADMIN] Lấy toàn bộ đơn hàng toàn sàn (phân trang, lọc trạng thái, tìm kiếm)' })
   findAllForAdmin(
     @Query('status') status?: string,
@@ -33,8 +32,9 @@ export class OrdersController {
   }
 
   @Patch('admin/:id/status')
-  @UseGuards(RolesGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('admin', 'staff')
+  @ApiBearerAuth('JWT-auth')
   @ApiOperation({ summary: '[ADMIN] Cập nhật trạng thái đơn hàng (Duyệt, đang xử lý, giao, hủy...)' })
   updateOrderStatus(
     @Param('id', ParseIntPipe) id: number,
@@ -46,8 +46,9 @@ export class OrdersController {
   }
 
   @Post('admin/:id/shipment')
-  @UseGuards(RolesGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('admin', 'staff')
+  @ApiBearerAuth('JWT-auth')
   @ApiOperation({ summary: '[ADMIN] Tạo vận đơn giao hàng và chuyển trạng thái sang Shipping' })
   createShipment(
     @Param('id', ParseIntPipe) id: number,
@@ -59,22 +60,70 @@ export class OrdersController {
   }
 
   @Post()
-  @ApiOperation({ summary: 'Tạo đơn hàng mới (Áp dụng giảm giá, voucher, điểm thưởng & tính phí ship)' })
+  @ApiOperation({ summary: 'Tạo đơn hàng mới (Hỗ trợ cả khách vãng lai và thành viên)' })
   @ApiResponse({ status: 201, description: 'Đơn hàng được tạo thành công' })
-  createOrder(@CurrentUser() user: CurrentUserPayload, @Body() dto: CreateOrderDto) {
-    return this.ordersService.createOrder(user.id, dto);
+  createOrder(
+    @Headers('authorization') authHeader: string | undefined,
+    @Body() dto: CreateOrderDto,
+  ) {
+    let userId: number | undefined;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      try {
+        const token = authHeader.substring(7);
+        const payloadBase64 = token.split('.')[1];
+        if (payloadBase64) {
+          const decoded = JSON.parse(Buffer.from(payloadBase64, 'base64').toString());
+          if (decoded && (decoded.sub || decoded.id)) {
+            userId = Number(decoded.sub || decoded.id);
+          }
+        }
+      } catch (e) {
+        // Ignored for guest checkout
+      }
+    }
+    return this.ordersService.createOrder(userId, dto);
+  }
+
+  @Post(':id/sepay/checkout')
+  @ApiOperation({ summary: 'Tạo link và form thanh toán SePay VietQR cho đơn hàng' })
+  createSepayCheckout(@Param('id', ParseIntPipe) id: number) {
+    return this.ordersService.createSepayCheckout(id);
+  }
+
+  @Post('sepay/ipn')
+  @ApiOperation({ summary: 'Webhook IPN nhận thông báo giao dịch chuyển khoản thành công từ SePay' })
+  handleSepayIpn(
+    @Headers('x-secret-key') headerSecret: string | undefined,
+    @Body() body: any,
+  ) {
+    return this.ordersService.handleSepayIpn(headerSecret, body);
+  }
+
+  @Get('lookup/:orderNumber')
+  @ApiOperation({ summary: 'Tra cứu thông tin đơn hàng theo mã (Dành cho trang xác nhận và theo dõi đơn)' })
+  getOrderByOrderNumber(@Param('orderNumber') orderNumber: string) {
+    return this.ordersService.getOrderByOrderNumber(orderNumber);
+  }
+
+  @Get(':id/payment-status')
+  @ApiOperation({ summary: 'Kiểm tra trạng thái thanh toán của đơn hàng (dùng để polling realtime)' })
+  getOrderPaymentStatus(@Param('id', ParseIntPipe) id: number) {
+    return this.ordersService.getOrderPaymentStatus(id);
   }
 
   @Get('my-orders')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('JWT-auth')
   @ApiOperation({ summary: 'Lấy danh sách các đơn hàng của tôi' })
   getMyOrders(@CurrentUser() user: CurrentUserPayload) {
     return this.ordersService.getMyOrders(user.id);
   }
 
   @Get(':id')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('JWT-auth')
   @ApiOperation({ summary: 'Lấy chi tiết đơn hàng & lịch sử trạng thái vận chuyển' })
   getOrderDetail(@CurrentUser() user: CurrentUserPayload, @Param('id', ParseIntPipe) id: number) {
     return this.ordersService.getOrderDetail(user.id, id);
   }
 }
-

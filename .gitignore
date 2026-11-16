@@ -38,3 +38,8 @@ Thumbs.db
 
 # Antigravity / Agents
 .agents/
+
+# Uploads
+backend/uploads/*
+!backend/uploads/.gitkeep
+uploads/

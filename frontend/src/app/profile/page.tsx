@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import Header from '@/components/common/Header';
@@ -8,6 +8,7 @@ import Footer from '@/components/common/Footer';
 import CartDrawer from '@/components/storefront/CartDrawer';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { userService, UserFullProfile, UserAddress } from '@/services/user.service';
+import { uploadService } from '@/services/upload.service';
 import {
   Card,
   CardHeader,
@@ -46,6 +47,8 @@ import {
   Scale,
   Activity,
   LogOut,
+  Upload,
+  Camera,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -67,6 +70,39 @@ export default function ProfileSettingsPage() {
   const [phone, setPhone] = useState('');
   const [gender, setGender] = useState<'male' | 'female' | 'other'>('male');
   const [avatarUrl, setAvatarUrl] = useState('');
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
+
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      toast.error('Vui lòng chọn tệp hình ảnh hợp lệ (JPG, PNG, WEBP,...)');
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('Kích thước ảnh tối đa là 5MB');
+      return;
+    }
+
+    setUploadingAvatar(true);
+    try {
+      const res = await uploadService.uploadImage(file);
+      setAvatarUrl(res.url);
+      setProfileData((prev) => (prev ? { ...prev, avatarUrl: res.url } : null));
+      toast.success('Đã tải ảnh đại diện lên thành công! Nhấn "Lưu thay đổi" để hoàn tất cập nhật.');
+    } catch (err: any) {
+      console.error('Lỗi upload avatar:', err);
+      toast.error(err.response?.data?.message || 'Không thể tải ảnh đại diện lên');
+    } finally {
+      setUploadingAvatar(false);
+      if (avatarInputRef.current) {
+        avatarInputRef.current.value = '';
+      }
+    }
+  };
 
   // Add Address Form state
   const [isAddingAddress, setIsAddingAddress] = useState(false);
@@ -312,14 +348,31 @@ export default function ProfileSettingsPage() {
               <div className="h-20 bg-gradient-to-r from-emerald-800 via-emerald-700 to-teal-800 relative" />
               <CardContent className="pt-0 relative px-6 pb-6 text-center">
                 {/* Avatar Badge */}
-                <div className="-mt-10 mb-3 inline-block">
-                  <div className="w-20 h-20 rounded-full border-4 border-white dark:border-slate-900 bg-emerald-700 text-white font-black text-2xl flex items-center justify-center shadow-md mx-auto overflow-hidden">
-                    {profileData?.avatarUrl ? (
-                      <img src={profileData.avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
+                <div className="-mt-10 mb-3 inline-block relative group">
+                  <div className="w-20 h-20 rounded-full border-4 border-white dark:border-slate-900 bg-emerald-700 text-white font-black text-2xl flex items-center justify-center shadow-md mx-auto overflow-hidden relative">
+                    {uploadingAvatar ? (
+                      <div className="absolute inset-0 bg-slate-900/60 flex items-center justify-center">
+                        <Loader2 className="w-6 h-6 animate-spin text-white" />
+                      </div>
+                    ) : avatarUrl || profileData?.avatarUrl ? (
+                      <img
+                        src={avatarUrl || profileData?.avatarUrl || ''}
+                        alt="Avatar"
+                        className="w-full h-full object-cover"
+                      />
                     ) : (
                       userInitials
                     )}
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => avatarInputRef.current?.click()}
+                    disabled={uploadingAvatar}
+                    className="absolute bottom-0 right-0 p-1.5 rounded-full bg-emerald-700 hover:bg-emerald-800 text-white shadow-md border-2 border-white dark:border-slate-900 transition-all cursor-pointer"
+                    title="Đổi ảnh đại diện"
+                  >
+                    <Camera className="w-3.5 h-3.5" />
+                  </button>
                 </div>
 
                 <h3 className="font-extrabold text-base text-slate-900 dark:text-white">
@@ -568,6 +621,77 @@ export default function ProfileSettingsPage() {
                         placeholder="https://images.unsplash.com/..."
                       />
                       <p className="text-[11px] text-slate-400">Dán đường dẫn ảnh đại diện vuông để tối ưu hiển thị.</p>
+                    </div>
+                    {/* Tải ảnh đại diện trực tiếp qua file upload */}
+                    <div className="space-y-2 pt-2 pb-1 border-t border-slate-100 dark:border-slate-800">
+                      <Label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                        Ảnh đại diện (Avatar)
+                      </Label>
+                      
+                      <div className="flex items-center gap-4 p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800">
+                        {/* Preview */}
+                        <div className="w-16 h-16 rounded-full overflow-hidden border-2 border-emerald-600/30 bg-emerald-700 text-white flex items-center justify-center shrink-0 text-xl font-bold shadow-xs">
+                          {uploadingAvatar ? (
+                            <Loader2 className="w-5 h-5 animate-spin" />
+                          ) : avatarUrl ? (
+                            <img src={avatarUrl} alt="Avatar preview" className="w-full h-full object-cover" />
+                          ) : (
+                            userInitials
+                          )}
+                        </div>
+
+                        {/* Upload Controls */}
+                        <div className="flex-1 space-y-2">
+                          <input
+                            type="file"
+                            ref={avatarInputRef}
+                            onChange={handleAvatarUpload}
+                            accept="image/png,image/jpeg,image/webp,image/gif"
+                            className="hidden"
+                          />
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => avatarInputRef.current?.click()}
+                              disabled={uploadingAvatar}
+                              className="h-9 px-3 text-xs font-semibold flex items-center gap-1.5 rounded-xl border-emerald-600/30 text-emerald-800 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 cursor-pointer"
+                            >
+                              {uploadingAvatar ? (
+                                <>
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                  <span>Đang tải lên...</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Upload className="w-3.5 h-3.5" />
+                                  <span>Tải ảnh từ máy tính</span>
+                                </>
+                              )}
+                            </Button>
+
+                            {avatarUrl && (
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                  setAvatarUrl('');
+                                  setProfileData((prev) => (prev ? { ...prev, avatarUrl: null } : null));
+                                  toast.info('Đã gỡ ảnh đại diện. Nhấn Lưu thay đổi để hoàn tất.');
+                                }}
+                                className="h-9 px-2.5 text-xs text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/30 rounded-xl"
+                              >
+                                Gỡ ảnh
+                              </Button>
+                            )}
+                          </div>
+                          <p className="text-[11px] text-slate-400 dark:text-slate-500">
+                            Hỗ trợ JPG, PNG, WEBP (tối đa 5MB). Tải lên trực tiếp từ máy tính của bạn.
+                          </p>
+                        </div>
+                      </div>
                     </div>
 
                     <div className="pt-3">
@@ -857,16 +981,7 @@ export default function ProfileSettingsPage() {
                         </div>
                       </div>
 
-                      {/* Health Advice Box */}
-                      <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/40 text-xs text-amber-900 dark:text-amber-300 space-y-1">
-                        <div className="font-bold flex items-center gap-1.5 text-amber-800 dark:text-amber-200">
-                          <Sparkles className="w-4 h-4 text-amber-600" />
-                          <span>Khuyến nghị thực đơn phù hợp:</span>
-                        </div>
-                        <p className="leading-relaxed text-[11px] text-amber-800/90 dark:text-amber-300/90">
-                          Ưu tiên các sản phẩm giàu Protein và chất béo lành mạnh như Granola mộc sấy đối lưu 60°C, hạt macca Tây Nguyên và chia pudding để duy trì năng lượng bền vững mà không làm tăng vọt đường huyết.
-                        </p>
-                      </div>
+                      
                     </>
                   ) : (
                     <div className="text-center py-8 text-slate-500 space-y-3">

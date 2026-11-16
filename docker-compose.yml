@@ -45,6 +45,7 @@ services:
   # 3. BACKEND (NestJS API Service - Dùng cho Cách 2: Chạy Full Docker)
   # =====================================================================
   backend:
+    image: natriofood-backend:latest
     build:
       context: ./backend
       dockerfile: Dockerfile
@@ -54,8 +55,16 @@ services:
       NODE_ENV: production
       PORT: 5001
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-nutrio_password_2026}@postgres:5432/${POSTGRES_DB:-nutrio_db}?schema=public
+      JWT_SECRET: ${JWT_SECRET:-nutrio_healthy_food_jwt_super_secret_key_2026}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
+      SEPAY_ENV: ${SEPAY_ENV:-sandbox}
+      SEPAY_MERCHANT_ID: ${SEPAY_MERCHANT_ID:-SP-TEST-THA45536}
+      SEPAY_SECRET_KEY: ${SEPAY_SECRET_KEY:-spsk_test_94Y873ANFoddjKnx8N3frEaLsPYN2EnD}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
     ports:
       - "5001:5001"
+    volumes:
+      - ./backend/uploads:/app/uploads
     depends_on:
       postgres:
         condition: service_healthy

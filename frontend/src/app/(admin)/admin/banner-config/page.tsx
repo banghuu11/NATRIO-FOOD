@@ -14,9 +14,12 @@ import {
   Type,
   ExternalLink,
   Check,
+  Loader2,
+  Trash2,
 } from 'lucide-react';
 import { bannerService, BannerConfig } from '@/services/banner.service';
 import { useBannerStore } from '@/stores/useBannerStore';
+import { uploadService } from '@/services/upload.service';
 
 export default function BannerConfigPage() {
   const [config, setConfig] = useState<BannerConfig>({
@@ -94,24 +97,38 @@ export default function BannerConfigPage() {
     loadConfig();
   }, []);
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const [isUploadingBg, setIsUploadingBg] = useState(false);
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      if (file.size > 5 * 1024 * 1024) {
-        alert('Kích thước ảnh tối đa là 5MB');
-        return;
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      alert('Vui lòng chọn tệp hình ảnh hợp lệ (JPG, PNG, WEBP)');
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      alert('Kích thước ảnh tối đa là 5MB');
+      return;
+    }
+
+    setIsUploadingBg(true);
+    try {
+      const res = await uploadService.uploadImage(file);
+      setConfig((prev) => ({
+        ...prev,
+        backgroundImageUrl: res.url,
+      }));
+      showToast('Đã tải ảnh nền thành công từ máy tính!');
+    } catch (err: any) {
+      console.error('Lỗi tải ảnh:', err);
+      alert(err.response?.data?.message || 'Không thể tải ảnh nền lên');
+    } finally {
+      setIsUploadingBg(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
       }
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        if (event.target?.result) {
-          setConfig((prev) => ({
-            ...prev,
-            backgroundImageUrl: event.target!.result as string,
-          }));
-          showToast('Đã tải ảnh nền thành công từ máy tính!');
-        }
-      };
-      reader.readAsDataURL(file);
     }
   };
 
@@ -317,33 +334,81 @@ export default function BannerConfigPage() {
 
             <div className="space-y-4">
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  URL Ảnh Nền (Background Image URL)
+                <label className="block text-xs font-bold text-slate-700 mb-2">
+                  Ảnh Nền Banner (Tải Trực Tiếp Từ Máy Tính)
                 </label>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={config.backgroundImageUrl || ''}
-                    onChange={(e) => setConfig({ ...config, backgroundImageUrl: e.target.value })}
-                    className="flex-1 px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                    placeholder="Nhập link ảnh (https://...) hoặc chọn mẫu bên dưới"
-                  />
-                  <input
-                    type="file"
-                    ref={fileInputRef}
-                    onChange={handleFileUpload}
-                    accept="image/*"
-                    className="hidden"
-                  />
-                  <button
-                    type="button"
+
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  onChange={handleFileUpload}
+                  accept="image/*"
+                  className="hidden"
+                />
+
+                {config.backgroundImageUrl ? (
+                  <div className="relative rounded-2xl overflow-hidden border border-slate-200 bg-slate-900 group shadow-sm">
+                    <img
+                      src={config.backgroundImageUrl}
+                      alt="Banner background preview"
+                      className="w-full h-36 object-cover opacity-80 group-hover:opacity-90 transition-opacity"
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-slate-950/70 via-transparent to-transparent flex items-end justify-between p-3.5">
+                      <span className="text-[11px] font-semibold text-white/90 truncate max-w-[260px] bg-black/40 px-2 py-0.5 rounded backdrop-blur-xs">
+                        {config.backgroundImageUrl.split('/').pop()}
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => fileInputRef.current?.click()}
+                          disabled={isUploadingBg}
+                          className="px-3 py-1.5 rounded-xl bg-white hover:bg-slate-100 text-slate-800 text-xs font-bold shadow-md flex items-center gap-1.5 transition-all cursor-pointer"
+                        >
+                          {isUploadingBg ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-600" />
+                          ) : (
+                            <Upload className="w-3.5 h-3.5 text-emerald-600" />
+                          )}
+                          <span>Đổi Ảnh</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setConfig({ ...config, backgroundImageUrl: '' })}
+                          className="px-2.5 py-1.5 rounded-xl bg-rose-600/90 hover:bg-rose-700 text-white text-xs font-bold shadow-md transition-all cursor-pointer"
+                          title="Gỡ ảnh nền"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div
                     onClick={() => fileInputRef.current?.click()}
-                    className="px-3.5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold border border-slate-200 flex items-center gap-1.5 transition-all cursor-pointer shrink-0"
+                    className="border-2 border-dashed border-slate-300 hover:border-emerald-500 rounded-2xl p-6 text-center bg-slate-50/60 hover:bg-emerald-50/20 transition-all cursor-pointer flex flex-col items-center justify-center gap-2"
                   >
-                    <Upload className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>Tải Từ Máy</span>
-                  </button>
-                </div>
+                    {isUploadingBg ? (
+                      <div className="py-2 flex flex-col items-center gap-2">
+                        <Loader2 className="w-8 h-8 animate-spin text-emerald-600" />
+                        <span className="text-xs font-bold text-slate-600">Đang tải ảnh lên...</span>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="w-10 h-10 rounded-2xl bg-emerald-100/80 text-emerald-700 flex items-center justify-center">
+                          <Upload className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <div className="text-xs font-bold text-slate-800">
+                            Nhấn để chọn ảnh nền từ máy tính
+                          </div>
+                          <div className="text-[11px] text-slate-400 mt-0.5">
+                            Hỗ trợ JPG, PNG, WEBP (Tối đa 5MB)
+                          </div>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div>

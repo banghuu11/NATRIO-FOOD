@@ -53,10 +53,25 @@ export class ProductsService {
     }
 
     if (query.search) {
-      where.OR = [
-        { name: { contains: query.search, mode: 'insensitive' } },
-        { short_description: { contains: query.search, mode: 'insensitive' } },
-      ];
+      const term = query.search.trim();
+      const pattern = `%${term}%`;
+      try {
+        const matches = await this.prisma.$queryRaw<{ id: number }[]>`
+          SELECT id FROM products 
+          WHERE status = 'active' AND deleted_at IS NULL
+            AND (
+              unaccent(name) ILIKE unaccent(${pattern})
+              OR unaccent(COALESCE(short_description, '')) ILIKE unaccent(${pattern})
+            )
+        `;
+        const ids = matches.map((m) => m.id);
+        where.id = { in: ids };
+      } catch (err) {
+        where.OR = [
+          { name: { contains: term, mode: 'insensitive' } },
+          { short_description: { contains: term, mode: 'insensitive' } },
+        ];
+      }
     }
 
     let orderBy: any = { created_at: 'desc' };
@@ -392,10 +407,25 @@ export class ProductsService {
       where.nutri_score_grade = query.nutriScore.toUpperCase();
     }
     if (query.search) {
-      where.OR = [
-        { name: { contains: query.search, mode: 'insensitive' } },
-        { slug: { contains: query.search, mode: 'insensitive' } },
-      ];
+      const term = query.search.trim();
+      const pattern = `%${term}%`;
+      try {
+        const matches = await this.prisma.$queryRaw<{ id: number }[]>`
+          SELECT id FROM products 
+          WHERE (
+            unaccent(name) ILIKE unaccent(${pattern})
+            OR unaccent(slug) ILIKE unaccent(${pattern})
+            OR unaccent(COALESCE(short_description, '')) ILIKE unaccent(${pattern})
+          )
+        `;
+        const ids = matches.map((m) => m.id);
+        where.id = { in: ids };
+      } catch (err) {
+        where.OR = [
+          { name: { contains: term, mode: 'insensitive' } },
+          { slug: { contains: term, mode: 'insensitive' } },
+        ];
+      }
     }
 
     const [products, total] = await Promise.all([

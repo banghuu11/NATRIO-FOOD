@@ -26,3 +26,17 @@ export function formatDate(date: Date | string, formatStr: string = "dd/MM/yyyy"
   const d = typeof date === "string" ? new Date(date) : date;
   return new Intl.DateTimeFormat("vi-VN").format(d);
 }
+
+/**
+ * Remove Vietnamese accents/diacritics for flexible search matching
+ */
+export function removeVietnameseTones(str: string): string {
+  if (!str) return "";
+  return str
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d")
+    .replace(/Đ/g, "D")
+    .toLowerCase()
+    .trim();
+}

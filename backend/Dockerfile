@@ -17,6 +17,7 @@ RUN npm ci
 # 3. Builder Stage
 # ==========================================
 FROM base AS builder
+ENV DATABASE_URL="postgresql://postgres:nutrio_password_2026@localhost:5432/nutrio_db?schema=public"
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npx prisma generate

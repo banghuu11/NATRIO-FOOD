@@ -1,14 +1,33 @@
 import { NestFactory } from '@nestjs/core';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet';
+import * as path from 'path';
+import * as fs from 'fs';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+
+  // Tạo thư mục uploads nếu chưa tồn tại
+  const uploadsDir = path.join(process.cwd(), 'uploads');
+  if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+  }
+
+  // Cấu hình phục vụ file tĩnh cho uploads
+  app.useStaticAssets(uploadsDir, {
+    prefix: '/uploads/',
+  });
 
   // Security Middleware
-  app.use(helmet());
+  app.use(
+    helmet({
+      crossOriginResourcePolicy: { policy: 'cross-origin' },
+    }),
+  );
+
   app.enableCors({
     origin: ['http://localhost:3000', 'http://localhost:3001', 'http://127.0.0.1:3000'],
     credentials: true,
@@ -38,7 +57,8 @@ async function bootstrap() {
 - 📊 **Hồ sơ sức khỏe**: Tính tự động BMI, BMR, TDEE, Calo mục tiêu, Nhật ký ăn uống & Nhật ký nước.
 - 📦 **Quản lý kho FEFO**: Phân bổ lô hàng xuất theo hạn sử dụng sớm nhất.
 - 🎯 **Quiz Dinh dưỡng**: Trắc nghiệm cá nhân hóa gợi ý thực phẩm theo thể trạng.
-- 🍲 **Công thức & Thực đơn**: Shop the Recipe, Kế hoạch ăn 7 ngày.`,
+- 🍲 **Công thức & Thực đơn**: Shop the Recipe, Kế hoạch ăn 7 ngày.
+- 🖼️ **Tải ảnh lên (Upload)**: Tải ảnh Avatar, Banner, Sản phẩm trực tiếp từ thiết bị.`,
     )
     .setVersion('1.0.0')
     .addBearerAuth(
@@ -54,6 +74,7 @@ async function bootstrap() {
     )
     .addTag('Health', 'Kiểm tra trạng thái máy chủ & kết nối CSDL')
     .addTag('Auth', 'Xác thực, Đăng ký, Đăng nhập & Quản lý phiên')
+    .addTag('Upload', 'Tải tệp hình ảnh lên máy chủ (Avatar, Banner, Sản phẩm)')
     .addTag('Users', 'Quản lý thông tin tài khoản, Hồ sơ người dùng & Sổ địa chỉ')
     .addTag('Health Profile', 'Hồ sơ dinh dưỡng, BMI, BMR, TDEE & Quản lý Dị ứng/Chế độ ăn')
     .addTag('Categories', 'Danh mục thực phẩm, Nhãn hàng & Chứng nhận (Organic, VietGAP)')

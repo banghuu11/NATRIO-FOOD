@@ -1,12 +1,15 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateOrderDto } from './dto/order.dto';
+import { SepayService } from './sepay.service';
 
 @Injectable()
 export class OrdersService {
+  private sepayService = new SepayService();
+
   constructor(private prisma: PrismaService) {}
 
-  async createOrder(userId: number, dto: CreateOrderDto) {
+  async createOrder(userId: number | undefined | null, dto: CreateOrderDto) {
     if (!dto.items || dto.items.length === 0) {
       throw new BadRequestException('Đơn hàng cần có ít nhất một sản phẩm');
     }
@@ -51,7 +54,7 @@ export class OrdersService {
       });
     }
 
-    // 2. Tính phí vận chuyển
+    // 2. Tính phí vận chuyển (Freeship >= 300.000₫)
     let shippingFee = 25000;
     if (dto.shippingMethodId) {
       const sm = await this.prisma.shipping_methods.findUnique({
@@ -95,17 +98,16 @@ export class OrdersService {
       }
     }
 
-    // 4. Tính điểm thưởng giảm giá (1 điểm = 100đ)
+    // 4. Tính điểm thưởng giảm giá (1 điểm = 100đ, chỉ cho user đăng nhập)
     let pointsUsed = 0;
     let pointsDiscount = 0;
-    if (dto.pointsToUse && dto.pointsToUse > 0) {
+    if (userId && dto.pointsToUse && dto.pointsToUse > 0) {
       const loyalty = await this.prisma.loyalty_accounts.findUnique({
         where: { user_id: BigInt(userId) },
       });
       if (loyalty && loyalty.points_balance >= dto.pointsToUse) {
         pointsUsed = dto.pointsToUse;
         pointsDiscount = pointsUsed * 100;
-        // Giới hạn không giảm quá 50% subtotal
         if (pointsDiscount > subtotal * 0.5) {
           pointsDiscount = subtotal * 0.5;
           pointsUsed = Math.floor(pointsDiscount / 100);
@@ -113,13 +115,15 @@ export class OrdersService {
       }
     }
 
-    const totalAmount = subtotal - discountAmount - pointsDiscount + shippingFee;
-    const pointsEarned = Math.floor(totalAmount / 1000); // 1,000đ = 1 điểm
+    const totalAmount = Math.max(0, subtotal - discountAmount - pointsDiscount + shippingFee);
+    const pointsEarned = userId ? Math.floor(totalAmount / 1000) : 0;
 
-    // 5. Lưu đơn hàng
+    // 5. Lưu đơn hàng vào Database
     const order = await this.prisma.orders.create({
       data: {
-        user_id: BigInt(userId),
+        user_id: userId ? BigInt(userId) : null,
+        guest_email: !userId ? (dto.email || null) : null,
+        guest_phone: !userId ? dto.phone : null,
         status: 'pending',
         payment_status: 'unpaid',
         payment_method: dto.paymentMethod as any,
@@ -151,7 +155,7 @@ export class OrdersService {
     });
 
     // 6. Trừ điểm nếu có sử dụng
-    if (pointsUsed > 0) {
+    if (userId && pointsUsed > 0) {
       await this.prisma.loyalty_transactions.create({
         data: {
           user_id: BigInt(userId),
@@ -163,14 +167,31 @@ export class OrdersService {
       });
     }
 
-    // 7. Tự động dọn giỏ hàng của user
-    const cart = await this.prisma.carts.findFirst({
-      where: { user_id: BigInt(userId) },
-    });
-    if (cart) {
-      await this.prisma.cart_items.deleteMany({
-        where: { cart_id: cart.id },
+    // 7. Tự động dọn giỏ hàng của user nếu có
+    if (userId) {
+      const cart = await this.prisma.carts.findFirst({
+        where: { user_id: BigInt(userId) },
       });
+      if (cart) {
+        await this.prisma.cart_items.deleteMany({
+          where: { cart_id: cart.id },
+        });
+      }
+    }
+
+    // 8. Nếu phương thức thanh toán là SePay (bank_transfer), tạo trước thông tin checkout SePay
+    let sepayCheckout = null;
+    if (dto.paymentMethod === 'bank_transfer') {
+      try {
+        sepayCheckout = this.sepayService.createCheckout({
+          invoiceCode: order.order_number,
+          amount: Number(order.total_amount),
+          description: `NATRIOFOOD ${order.order_number}`,
+          customerId: userId ? `USER${userId}` : 'GUEST',
+        });
+      } catch (err) {
+        console.error('Lỗi khởi tạo SePay checkout:', err);
+      }
     }
 
     return {
@@ -190,6 +211,213 @@ export class OrdersService {
         placedAt: order.placed_at,
         itemCount: order.order_items.length,
       },
+      sepayCheckout,
+    };
+  }
+
+  /**
+   * Tạo phiên SePay Checkout cho đơn hàng
+   */
+  async createSepayCheckout(orderId: number) {
+    const order = await this.prisma.orders.findUnique({
+      where: { id: BigInt(orderId) },
+    });
+
+    if (!order) {
+      throw new NotFoundException(`Không tìm thấy đơn hàng ID: ${orderId}`);
+    }
+
+    if (order.payment_status === 'paid') {
+      throw new BadRequestException('Đơn hàng này đã được thanh toán');
+    }
+
+    const checkout = this.sepayService.createCheckout({
+      invoiceCode: order.order_number,
+      amount: Number(order.total_amount),
+      description: `NATRIOFOOD ${order.order_number}`,
+      customerId: order.user_id ? `USER${order.user_id}` : 'GUEST',
+    });
+
+    return {
+      ...checkout,
+      orderId: Number(order.id),
+      orderNumber: order.order_number,
+      amount: Number(order.total_amount),
+    };
+  }
+
+  /**
+   * Xử lý Webhook IPN từ cổng thanh toán SePay
+   */
+  async handleSepayIpn(headerSecret: string | undefined, body: any) {
+    if (!this.sepayService.verifyIpnSecret(headerSecret)) {
+      throw new UnauthorizedException('Chữ ký bảo mật SePay IPN không hợp lệ');
+    }
+
+    const { notification_type: notificationType, order: sepayOrder, transaction } = body || {};
+
+    if (notificationType !== 'ORDER_PAID') {
+      return { success: true, message: 'Bỏ qua notification_type khác ORDER_PAID' };
+    }
+
+    if (
+      sepayOrder?.order_status !== 'CAPTURED' ||
+      transaction?.transaction_status !== 'APPROVED' ||
+      sepayOrder?.order_currency !== 'VND'
+    ) {
+      throw new BadRequestException('Trạng thái giao dịch SePay không hợp lệ');
+    }
+
+    const orderNumber = sepayOrder.order_invoice_number;
+    const order = await this.prisma.orders.findUnique({
+      where: { order_number: orderNumber },
+    });
+
+    if (!order) {
+      throw new NotFoundException(`Không tìm thấy đơn hàng với mã hóa đơn: ${orderNumber}`);
+    }
+
+    if (order.payment_status === 'paid') {
+      return { success: true, duplicate: true, message: 'Đơn hàng đã được ghi nhận thanh toán trước đó' };
+    }
+
+    const paidAmount = Number(sepayOrder.order_amount);
+    if (paidAmount !== Number(order.total_amount)) {
+      console.warn(`Số tiền SePay (${paidAmount}) khác giá trị đơn hàng (${order.total_amount})`);
+    }
+
+    // Cập nhật trạng thái thanh toán đơn hàng
+    await this.prisma.$transaction(async (tx) => {
+      await tx.orders.update({
+        where: { id: order.id },
+        data: {
+          payment_status: 'paid',
+          status: order.status === 'pending' ? 'processing' : order.status,
+          updated_at: new Date(),
+        },
+      });
+
+      // Lưu bản ghi vào bảng payments
+      await tx.payments.create({
+        data: {
+          order_id: order.id,
+          method: 'bank_transfer',
+          status: 'paid',
+          amount: order.total_amount,
+          currency: 'VND',
+          provider_txn_id: transaction?.transaction_id || `SEP-${Date.now()}`,
+          paid_at: new Date(),
+        },
+      });
+
+      // Ghi log lịch sử trạng thái
+      await tx.order_status_history.create({
+        data: {
+          order_id: order.id,
+          from_status: order.status,
+          to_status: 'processing',
+          note: `SePay VietQR IPN xác nhận thanh toán thành công (Mã GD: ${transaction?.transaction_id})`,
+        },
+      });
+    });
+
+    return { success: true, orderNumber };
+  }
+
+  /**
+   * Tra cứu đơn hàng theo order_number (công khai cho trang thanh toán thành công)
+   */
+  async getOrderByOrderNumber(orderNumber: string) {
+    const order = await this.prisma.orders.findUnique({
+      where: { order_number: orderNumber },
+      include: {
+        order_items: true,
+        order_status_history: {
+          orderBy: { changed_at: 'asc' },
+        },
+        shipments: {
+          include: {
+            shipment_events: {
+              orderBy: { occurred_at: 'asc' },
+            },
+          },
+        },
+      },
+    });
+
+    if (!order) {
+      throw new NotFoundException(`Không tìm thấy đơn hàng mã: ${orderNumber}`);
+    }
+
+    return {
+      id: Number(order.id),
+      orderNumber: order.order_number,
+      status: order.status,
+      paymentStatus: order.payment_status,
+      paymentMethod: order.payment_method,
+      shippingAddress: {
+        recipientName: order.ship_recipient_name,
+        phone: order.ship_phone,
+        province: order.ship_province,
+        district: order.ship_district,
+        ward: order.ship_ward,
+        street: order.ship_street,
+        note: order.ship_note,
+      },
+      pricing: {
+        subtotal: Number(order.subtotal),
+        discountAmount: Number(order.discount_amount),
+        pointsDiscount: Number(order.points_discount),
+        shippingFee: Number(order.shipping_fee),
+        totalAmount: Number(order.total_amount),
+        pointsEarned: order.points_earned,
+      },
+      placedAt: order.placed_at,
+      items: order.order_items.map((i) => ({
+        id: Number(i.id),
+        productName: i.product_name,
+        variantName: i.variant_name,
+        sku: i.sku,
+        unitPrice: Number(i.unit_price),
+        quantity: i.quantity,
+        lineTotal: Number(i.line_total),
+        caloriesKcal: i.calories_kcal ? Number(i.calories_kcal) : null,
+      })),
+      history: order.order_status_history.map((h) => ({
+        toStatus: h.to_status,
+        note: h.note,
+        changedAt: h.changed_at,
+      })),
+    };
+  }
+
+  /**
+   * Tra cứu nhanh trạng thái thanh toán của đơn hàng
+   */
+  async getOrderPaymentStatus(orderId: number) {
+    const order = await this.prisma.orders.findUnique({
+      where: { id: BigInt(orderId) },
+      select: {
+        id: true,
+        order_number: true,
+        status: true,
+        payment_status: true,
+        payment_method: true,
+        total_amount: true,
+      },
+    });
+
+    if (!order) {
+      throw new NotFoundException(`Không tìm thấy đơn hàng ID: ${orderId}`);
+    }
+
+    return {
+      id: Number(order.id),
+      orderNumber: order.order_number,
+      status: order.status,
+      paymentStatus: order.payment_status,
+      paymentMethod: order.payment_method,
+      totalAmount: Number(order.total_amount),
     };
   }
 
@@ -287,7 +515,7 @@ export class OrdersService {
   }
 
   /**
-   * [ADMIN] Lấy toàn bộ danh sách đơn hàng toàn sàn (hỗ trợ tìm kiếm, lọc trạng thái, phân trang)
+   * [ADMIN] Lấy toàn bộ danh sách đơn hàng toàn sàn
    */
   async findAllForAdmin(query: { status?: string; search?: string; page?: number; limit?: number }) {
     const page = query.page || 1;
@@ -321,37 +549,31 @@ export class OrdersService {
       this.prisma.orders.count({ where }),
     ]);
 
-    const formatted = orders.map((o) => ({
-      id: Number(o.id),
-      orderNumber: o.order_number,
-      customer: {
-        id: Number(o.users.id),
-        name: o.users.full_name,
-        phone: o.users.phone,
-        email: o.users.email,
-      },
-      recipient: {
-        name: o.ship_recipient_name,
-        phone: o.ship_phone,
-        address: `${o.ship_street}, ${o.ship_ward}, ${o.ship_district}, ${o.ship_province}`,
-        note: o.ship_note,
-      },
-      status: o.status,
-      paymentStatus: o.payment_status,
-      paymentMethod: o.payment_method,
-      totalAmount: Number(o.total_amount),
-      subtotal: Number(o.subtotal),
-      shippingFee: Number(o.shipping_fee),
-      discountAmount: Number(o.discount_amount),
-      placedAt: o.placed_at,
-      itemsCount: o.order_items.length,
-      itemsSummary: o.order_items.map((i) => `${i.product_name} (${i.quantity})`).join(', '),
-      trackingNumber: o.shipments[0]?.tracking_number || null,
-      carrier: o.shipments[0]?.carrier || null,
-    }));
-
     return {
-      data: formatted,
+      data: orders.map((o) => ({
+        id: Number(o.id),
+        orderNumber: o.order_number,
+        user: o.users ? { id: Number(o.users.id), fullName: o.users.full_name, phone: o.users.phone, email: o.users.email } : null,
+        guestEmail: o.guest_email,
+        guestPhone: o.guest_phone,
+        status: o.status,
+        paymentStatus: o.payment_status,
+        paymentMethod: o.payment_method,
+        totalAmount: Number(o.total_amount),
+        shippingFee: Number(o.shipping_fee),
+        recipientName: o.ship_recipient_name,
+        recipientPhone: o.ship_phone,
+        shippingAddress: `${o.ship_street}, ${o.ship_ward}, ${o.ship_district}, ${o.ship_province}`,
+        placedAt: o.placed_at,
+        itemsCount: o.order_items.length,
+        shipment: o.shipments[0]
+          ? {
+              carrier: o.shipments[0].carrier,
+              trackingNumber: o.shipments[0].tracking_number,
+              status: o.shipments[0].status,
+            }
+          : null,
+      })),
       meta: {
         total,
         page,
@@ -362,7 +584,7 @@ export class OrdersService {
   }
 
   /**
-   * [ADMIN] Cập nhật trạng thái đơn hàng (Duyệt, đang xử lý, đã gửi hàng, hoàn tất, hủy)
+   * [ADMIN] Cập nhật trạng thái đơn hàng
    */
   async updateOrderStatus(orderId: number, newStatus: any, note?: string, changedByUserId?: number) {
     const order = await this.prisma.orders.findUnique({
