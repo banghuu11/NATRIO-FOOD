@@ -1,102 +1,78 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 
+export interface CategoryNode {
+  id: number;
+  parentId: number | null;
+  name: string;
+  slug: string;
+  description: string | null;
+  imageUrl: string | null;
+  sortOrder: number;
+  productCount: number;
+  children: CategoryNode[];
+}
+
 @Injectable()
 export class CategoriesService {
   constructor(private prisma: PrismaService) {}
 
-  async findAllCategories() {
-    const categories = await this.prisma.categories.findMany({
+  /** Active categories as a tree; productCount includes products of child categories. */
+  async tree(): Promise<CategoryNode[]> {
+    const rows = await this.prisma.categories.findMany({
       where: { is_active: true },
-      orderBy: { sort_order: 'asc' },
-      include: {
-        _count: {
-          select: { products: { where: { status: 'active', deleted_at: null } } },
-        },
-      },
+      orderBy: [{ sort_order: 'asc' }, { name: 'asc' }],
+      include: { _count: { select: { products: { where: { status: 'active', deleted_at: null } } } } },
     });
+    const nodes = new Map<number, CategoryNode>();
+    for (const c of rows) {
+      nodes.set(Number(c.id), {
+        id: Number(c.id),
+        parentId: c.parent_id ? Number(c.parent_id) : null,
+        name: c.name,
+        slug: c.slug,
+        description: c.description,
+        imageUrl: c.image_url,
+        sortOrder: c.sort_order,
+        productCount: c._count.products,
+        children: [],
+      });
+    }
+    const roots: CategoryNode[] = [];
+    for (const n of nodes.values()) {
+      const parent = n.parentId ? nodes.get(n.parentId) : undefined;
+      if (parent) parent.children.push(n);
+      else roots.push(n);
+    }
+    const total = (n: CategoryNode): number => (n.productCount += n.children.reduce((s, c) => s + total(c), 0)) && n.productCount;
+    roots.forEach((r) => total(r));
+    return roots;
+  }
 
-    return categories.map((c) => ({
+  async findBySlug(slug: string) {
+    const c = await this.prisma.categories.findUnique({ where: { slug }, include: { categories: true, other_categories: { where: { is_active: true } } } });
+    if (!c || !c.is_active) throw new NotFoundException('Không tìm thấy danh mục');
+    return {
       id: Number(c.id),
       name: c.name,
       slug: c.slug,
       description: c.description,
       imageUrl: c.image_url,
-      sortOrder: c.sort_order,
-      productCount: c._count.products,
-    }));
-  }
-
-  async findCategoryBySlug(slug: string) {
-    const category = await this.prisma.categories.findUnique({
-      where: { slug },
-      include: {
-        _count: {
-          select: { products: { where: { status: 'active', deleted_at: null } } },
-        },
-      },
-    });
-
-    if (!category) {
-      throw new NotFoundException(`Không tìm thấy danh mục với slug: ${slug}`);
-    }
-
-    return {
-      id: Number(category.id),
-      name: category.name,
-      slug: category.slug,
-      description: category.description,
-      imageUrl: category.image_url,
-      productCount: category._count.products,
+      parent: c.categories ? { name: c.categories.name, slug: c.categories.slug } : null,
+      children: c.other_categories.map((x) => ({ name: x.name, slug: x.slug })),
     };
   }
 
-  async findAllBrands() {
-    const brands = await this.prisma.brands.findMany({
-      where: { is_active: true },
-      orderBy: { name: 'asc' },
-    });
-
-    return brands.map((b) => ({
-      id: Number(b.id),
-      name: b.name,
-      slug: b.slug,
-      logoUrl: b.logo_url,
-      country: b.country,
-      description: b.description,
-    }));
-  }
-
-  async findAllCertifications() {
-    const certs = await this.prisma.certifications.findMany({
-      orderBy: { name: 'asc' },
-    });
-
-    return certs.map((c) => ({
-      id: Number(c.id),
-      code: c.code,
-      name: c.name,
-      issuer: c.issuer,
-      description: c.description,
-      logoUrl: c.logo_url,
-    }));
-  }
-
-  async findAllFarms() {
-    const farms = await this.prisma.farms.findMany({
-      orderBy: { name: 'asc' },
-    });
-
-    return farms.map((f) => ({
-      id: Number(f.id),
-      name: f.name,
-      ownerName: f.owner_name,
-      province: f.province,
-      address: f.address,
-      description: f.description,
-      imageUrl: f.image_url,
-      latitude: f.latitude ? Number(f.latitude) : null,
-      longitude: f.longitude ? Number(f.longitude) : null,
-    }));
+  async meta() {
+    const [diets, allergens, certifications] = await Promise.all([
+      this.prisma.diets.findMany({ orderBy: { id: 'asc' } }),
+      this.prisma.allergens.findMany({ orderBy: { id: 'asc' } }),
+      this.prisma.certifications.findMany({ orderBy: { id: 'asc' } }),
+    ]);
+    return {
+      diets: diets.map((d) => ({ code: d.code, name: d.name_vi })),
+      allergens: allergens.map((a) => ({ code: a.code, name: a.name_vi })),
+      certifications: certifications.map((c) => ({ code: c.code, name: c.name, issuer: c.issuer })),
+    };
   }
 }

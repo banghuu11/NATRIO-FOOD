@@ -1,30 +1,71 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Post, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { Body, Controller, DefaultValuePipe, Delete, Get, HttpCode, Param, ParseIntPipe, Patch, Post, Query } from '@nestjs/common';
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { ReviewsService } from './reviews.service';
-import { CreateReviewDto } from './dto/review.dto';
-import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { CreateReviewDto, UpdateReviewDto } from './dto/review.dto';
 import { CurrentUser, CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/decorators/roles.decorator';
 
 @ApiTags('Reviews')
 @Controller('reviews')
 export class ReviewsController {
-  constructor(private readonly reviewsService: ReviewsService) {}
+  constructor(private readonly reviews: ReviewsService) {}
 
-  @Get('product/:productId')
   @Public()
-  @ApiOperation({ summary: 'Lấy danh sách đánh giá của một sản phẩm' })
-  @ApiResponse({ status: 200, description: 'Danh sách đánh giá đã duyệt kèm media & phản hồi' })
-  getReviewsByProduct(@Param('productId', ParseIntPipe) productId: number) {
-    return this.reviewsService.getReviewsByProduct(productId);
+  @Get('product/:productId')
+  @ApiOperation({ summary: 'Đánh giá đã duyệt của sản phẩm (lọc theo sao / có ảnh)' })
+  forProduct(
+    @Param('productId', ParseIntPipe) productId: number,
+    @CurrentUser() user: CurrentUserPayload | undefined,
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
+    @Query('star') star?: string,
+    @Query('withImages') withImages?: string,
+    @Query('sort') sort?: string,
+  ) {
+    return this.reviews.forProduct(productId, { page, star: star ? Number(star) : undefined, withImages: withImages === 'true', sort }, user?.id);
   }
 
-  @Post()
-  @UseGuards(JwtAuthGuard)
+  @Public()
+  @Get('testimonials')
+  testimonials() {
+    return this.reviews.testimonials();
+  }
+
   @ApiBearerAuth('JWT-auth')
-  @ApiOperation({ summary: 'Đăng đánh giá & chấm sao cho sản phẩm' })
-  @ApiResponse({ status: 201, description: 'Đánh giá thành công' })
-  createReview(@CurrentUser() user: CurrentUserPayload, @Body() dto: CreateReviewDto) {
-    return this.reviewsService.createReview(user.id, dto);
+  @Get('eligible')
+  @ApiOperation({ summary: 'Sản phẩm đã nhận hàng nhưng chưa đánh giá' })
+  eligible(@CurrentUser() user: CurrentUserPayload) {
+    return this.reviews.eligible(user.id);
+  }
+
+  @ApiBearerAuth('JWT-auth')
+  @Get('mine')
+  mine(@CurrentUser() user: CurrentUserPayload) {
+    return this.reviews.mine(user.id);
+  }
+
+  @ApiBearerAuth('JWT-auth')
+  @Post()
+  @ApiOperation({ summary: 'Viết đánh giá (chỉ người đã mua và nhận hàng)' })
+  create(@CurrentUser() user: CurrentUserPayload, @Body() dto: CreateReviewDto) {
+    return this.reviews.create(user.id, dto);
+  }
+
+  @ApiBearerAuth('JWT-auth')
+  @Patch(':id')
+  update(@CurrentUser() user: CurrentUserPayload, @Param('id', ParseIntPipe) id: number, @Body() dto: UpdateReviewDto) {
+    return this.reviews.update(user.id, id, dto);
+  }
+
+  @ApiBearerAuth('JWT-auth')
+  @Delete(':id')
+  remove(@CurrentUser() user: CurrentUserPayload, @Param('id', ParseIntPipe) id: number) {
+    return this.reviews.remove(user.id, id);
+  }
+
+  @ApiBearerAuth('JWT-auth')
+  @Post(':id/helpful')
+  @HttpCode(200)
+  helpful(@CurrentUser() user: CurrentUserPayload, @Param('id', ParseIntPipe) id: number) {
+    return this.reviews.toggleHelpful(user.id, id);
   }
 }

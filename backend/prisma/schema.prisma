@@ -1,5 +1,6 @@
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
 }
 
 datasource db {
@@ -78,6 +79,8 @@ model banners {
   starts_at  DateTime? @db.Timestamptz(6)
   ends_at    DateTime? @db.Timestamptz(6)
   is_active  Boolean   @default(true)
+  subtitle   String?   @db.VarChar(300)
+  cta_label  String?   @db.VarChar(60)
 }
 
 model blog_categories {
@@ -446,14 +449,15 @@ model ingredients {
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model inventory {
-  id                BigInt          @id @default(autoincrement())
+  id                BigInt              @id @default(autoincrement())
   warehouse_id      BigInt
   batch_id          BigInt
-  quantity_on_hand  Int             @default(0)
-  quantity_reserved Int             @default(0)
-  updated_at        DateTime        @default(now()) @db.Timestamptz(6)
-  product_batches   product_batches @relation(fields: [batch_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  warehouses        warehouses      @relation(fields: [warehouse_id], references: [id], onUpdate: NoAction)
+  quantity_on_hand  Int                 @default(0)
+  quantity_reserved Int                 @default(0)
+  updated_at        DateTime            @default(now()) @db.Timestamptz(6)
+  product_batches   product_batches     @relation(fields: [batch_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  warehouses        warehouses          @relation(fields: [warehouse_id], references: [id], onUpdate: NoAction)
+  order_allocations order_allocations[]
 
   @@unique([warehouse_id, batch_id])
   @@index([batch_id], map: "idx_inventory_batch")
@@ -604,27 +608,28 @@ model oauth_accounts {
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model order_items {
-  id               BigInt            @id @default(autoincrement())
-  order_id         BigInt
-  product_id       BigInt?
-  variant_id       BigInt?
-  bundle_id        BigInt?
-  batch_id         BigInt?
-  product_name     String            @db.VarChar(255)
-  variant_name     String?           @db.VarChar(150)
-  sku              String?           @db.VarChar(60)
-  unit_price       Decimal           @db.Decimal(14, 0)
-  quantity         Int
-  discount_amount  Decimal           @default(0) @db.Decimal(14, 0)
-  line_total       Decimal           @db.Decimal(14, 0)
-  calories_kcal    Decimal?          @db.Decimal(8, 1)
-  product_batches  product_batches?  @relation(fields: [batch_id], references: [id], onUpdate: NoAction)
-  bundles          bundles?          @relation(fields: [bundle_id], references: [id], onUpdate: NoAction)
-  orders           orders            @relation(fields: [order_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  products         products?         @relation(fields: [product_id], references: [id], onUpdate: NoAction)
-  product_variants product_variants? @relation(fields: [variant_id], references: [id], onUpdate: NoAction)
-  return_items     return_items[]
-  reviews          reviews[]
+  id                BigInt              @id @default(autoincrement())
+  order_id          BigInt
+  product_id        BigInt?
+  variant_id        BigInt?
+  bundle_id         BigInt?
+  batch_id          BigInt?
+  product_name      String              @db.VarChar(255)
+  variant_name      String?             @db.VarChar(150)
+  sku               String?             @db.VarChar(60)
+  unit_price        Decimal             @db.Decimal(14, 0)
+  quantity          Int
+  discount_amount   Decimal             @default(0) @db.Decimal(14, 0)
+  line_total        Decimal             @db.Decimal(14, 0)
+  calories_kcal     Decimal?            @db.Decimal(8, 1)
+  order_allocations order_allocations[]
+  product_batches   product_batches?    @relation(fields: [batch_id], references: [id], onUpdate: NoAction)
+  bundles           bundles?            @relation(fields: [bundle_id], references: [id], onUpdate: NoAction)
+  orders            orders              @relation(fields: [order_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  products          products?           @relation(fields: [product_id], references: [id], onUpdate: NoAction)
+  product_variants  product_variants?   @relation(fields: [variant_id], references: [id], onUpdate: NoAction)
+  return_items      return_items[]
+  reviews           reviews[]
 
   @@index([order_id], map: "idx_order_items_order")
   @@index([product_id], map: "idx_order_items_product")
@@ -687,6 +692,7 @@ model orders {
   cancelled_at         DateTime?              @db.Timestamptz(6)
   created_at           DateTime               @default(now()) @db.Timestamptz(6)
   updated_at           DateTime               @default(now()) @db.Timestamptz(6)
+  idempotency_key      String?                @unique(map: "uq_orders_idempotency_key") @db.VarChar(80)
   coupon_usages        coupon_usages[]
   loyalty_transactions loyalty_transactions[]
   order_items          order_items[]
@@ -773,26 +779,27 @@ model product_allergens {
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model product_batches {
-  id                BigInt            @id @default(autoincrement())
+  id                BigInt              @id @default(autoincrement())
   variant_id        BigInt
   farm_id           BigInt?
   supplier_id       BigInt?
-  batch_code        String            @unique @db.VarChar(60)
-  qr_code           String            @unique @db.VarChar(80)
-  harvested_on      DateTime?         @db.Date
-  manufactured_on   DateTime?         @db.Date
-  expires_on        DateTime?         @db.Date
-  received_on       DateTime          @default(dbgenerated("CURRENT_DATE")) @db.Date
+  batch_code        String              @unique @db.VarChar(60)
+  qr_code           String              @unique @db.VarChar(80)
+  harvested_on      DateTime?           @db.Date
+  manufactured_on   DateTime?           @db.Date
+  expires_on        DateTime?           @db.Date
+  received_on       DateTime            @default(dbgenerated("CURRENT_DATE")) @db.Date
   quantity_received Int
-  unit_cost         Decimal?          @db.Decimal(14, 0)
+  unit_cost         Decimal?            @db.Decimal(14, 0)
   lab_test_url      String?
   lab_result_note   String?
-  created_at        DateTime          @default(now()) @db.Timestamptz(6)
+  created_at        DateTime            @default(now()) @db.Timestamptz(6)
   inventory         inventory[]
+  order_allocations order_allocations[]
   order_items       order_items[]
-  farms             farms?            @relation(fields: [farm_id], references: [id], onUpdate: NoAction)
-  suppliers         suppliers?        @relation(fields: [supplier_id], references: [id], onUpdate: NoAction)
-  product_variants  product_variants  @relation(fields: [variant_id], references: [id], onUpdate: NoAction)
+  farms             farms?              @relation(fields: [farm_id], references: [id], onUpdate: NoAction)
+  suppliers         suppliers?          @relation(fields: [supplier_id], references: [id], onUpdate: NoAction)
+  product_variants  product_variants    @relation(fields: [variant_id], references: [id], onUpdate: NoAction)
   stock_movements   stock_movements[]
 
   @@index([expires_on], map: "idx_batches_expiry")
@@ -1010,6 +1017,7 @@ model quiz_options {
   option_text         String                @db.VarChar(200)
   icon                String?               @db.VarChar(60)
   sort_order          Int                   @default(0)
+  meta                Json                  @default("{}")
   quiz_answers        quiz_answers[]
   quiz_option_effects quiz_option_effects[]
   quiz_questions      quiz_questions        @relation(fields: [question_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
@@ -1120,6 +1128,7 @@ model recipes {
   view_count           Int                  @default(0)
   created_at           DateTime             @default(now()) @db.Timestamptz(6)
   updated_at           DateTime             @default(now()) @db.Timestamptz(6)
+  meal_types           meal_type[]          @default([])
   food_diary           food_diary[]
   meal_plan_items      meal_plan_items[]
   recipe_diets         recipe_diets[]
@@ -1585,15 +1594,16 @@ model verification_tokens {
 }
 
 model warehouses {
-  id              BigInt            @id @default(autoincrement())
-  code            String            @unique @db.VarChar(20)
-  name            String            @db.VarChar(150)
-  province        String?           @db.VarChar(100)
-  address         String?
-  is_cold_storage Boolean           @default(false)
-  is_active       Boolean           @default(true)
-  inventory       inventory[]
-  stock_movements stock_movements[]
+  id                BigInt              @id @default(autoincrement())
+  code              String              @unique @db.VarChar(20)
+  name              String              @db.VarChar(150)
+  province          String?             @db.VarChar(100)
+  address           String?
+  is_cold_storage   Boolean             @default(false)
+  is_active         Boolean             @default(true)
+  inventory         inventory[]
+  order_allocations order_allocations[]
+  stock_movements   stock_movements[]
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -1627,6 +1637,47 @@ model wishlists {
   users      users    @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@id([user_id, product_id])
+}
+
+model sql_migrations {
+  name       String    @id
+  applied_at DateTime? @default(now()) @db.Timestamptz(6)
+
+  @@map("_sql_migrations")
+}
+
+model cms_pages {
+  id           BigInt   @id @default(autoincrement())
+  slug         String   @unique @db.VarChar(120)
+  title        String   @db.VarChar(200)
+  content      String   @default("")
+  is_published Boolean  @default(true)
+  created_at   DateTime @default(now()) @db.Timestamptz(6)
+  updated_at   DateTime @default(now()) @db.Timestamptz(6)
+}
+
+model newsletter_subscribers {
+  id         BigInt   @id @default(autoincrement())
+  email      String   @unique @db.Citext
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model order_allocations {
+  id              BigInt          @id @default(autoincrement())
+  order_item_id   BigInt
+  inventory_id    BigInt
+  batch_id        BigInt
+  warehouse_id    BigInt
+  quantity        Int
+  state           String          @default("reserved") @db.VarChar(12)
+  created_at      DateTime        @default(now()) @db.Timestamptz(6)
+  product_batches product_batches @relation(fields: [batch_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  inventory       inventory       @relation(fields: [inventory_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  order_items     order_items     @relation(fields: [order_item_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  warehouses      warehouses      @relation(fields: [warehouse_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([order_item_id], map: "idx_order_alloc_item")
 }
 
 enum activity_level {
@@ -1684,6 +1735,7 @@ enum goal_type {
   gain_muscle
   eat_clean
   control_blood_sugar
+  gain_weight
 }
 
 enum loyalty_txn_type {

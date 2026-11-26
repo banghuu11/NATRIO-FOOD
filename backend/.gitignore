@@ -8,3 +8,12 @@ dist
 
 /generated/prisma
 
+
+# Local embedded PostgreSQL data & uploaded files
+.pgdata/
+uploads/
+
+# Database backups and data kept aside by restore
+backups/
+.pgdata.*/
+.pgdata.before-restore-*/

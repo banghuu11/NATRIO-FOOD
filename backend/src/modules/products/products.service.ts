@@ -1,376 +1,311 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ProductsQueryDto, SortBy } from './dto/products-query.dto';
+import { nutritionPer100g, productCardInclude, toProductCard, toVariant, PLACEHOLDER_IMG } from './product.mapper';
+import { StockService } from './stock.service';
+import { pageMeta } from '../../common/utils/serialize';
+
+/** Natural-language "need" keywords → diet codes, so users can search "đồ ăn giàu đạm cho người tập gym". */
+const NEED_KEYWORDS: { re: RegExp; diets: string[]; label: string }[] = [
+  { re: /(giau dam|protein|tap gym|gym|tang co|the hinh)/, diets: ['high_protein'], label: 'Giàu đạm / Tập gym' },
+  { re: /keto|low ?carb|it tinh bot/, diets: ['keto', 'low_carb'], label: 'Keto / Ít tinh bột' },
+  { re: /(it calo|giam can|an kieng|low ?cal)/, diets: ['low_calorie', 'low_carb'], label: 'Ít calo / Giảm cân' },
+  { re: /(an chay|thuan chay|vegan|chay)/, diets: ['vegan', 'vegetarian'], label: 'Thuần chay' },
+  { re: /(khong duong|tieu duong|duong huyet|sugar)/, diets: ['sugar_free', 'diabetic_friendly'], label: 'Không đường / Ổn định đường huyết' },
+  { re: /(eat ?clean|an sach|healthy)/, diets: ['eat_clean'], label: 'Eat Clean' },
+  { re: /(gluten)/, diets: ['gluten_free'], label: 'Không gluten' },
+];
+
+const normalize = (s: string) =>
+  s.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/gi, 'd').toLowerCase().trim();
+
+const ORDER_SQL: Record<SortBy, Prisma.Sql> = {
+  [SortBy.NEWEST]: Prisma.sql`p.created_at DESC, p.id DESC`,
+  [SortBy.PRICE_ASC]: Prisma.sql`dv.price ASC NULLS LAST, p.id`,
+  [SortBy.PRICE_DESC]: Prisma.sql`dv.price DESC NULLS LAST, p.id`,
+  [SortBy.BEST_SELLING]: Prisma.sql`p.sold_count DESC, p.id`,
+  [SortBy.RATING]: Prisma.sql`p.avg_rating DESC, p.review_count DESC, p.id`,
+};
 
 @Injectable()
 export class ProductsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private stock: StockService,
+  ) {}
+
+  detectNeeds(q: string) {
+    const nq = normalize(q);
+    return NEED_KEYWORDS.filter((k) => k.re.test(nq));
+  }
+
+  private async textSearchIds(q: string): Promise<bigint[]> {
+    const rows = await this.prisma.$queryRaw<{ id: bigint }[]>`
+      SELECT p.id FROM products p
+      WHERE p.status = 'active' AND p.deleted_at IS NULL AND (
+        p.search_vector @@ plainto_tsquery('simple', f_unaccent(${q}))
+        OR f_unaccent(lower(p.name)) LIKE '%' || f_unaccent(lower(${q})) || '%'
+        OR EXISTS (SELECT 1 FROM categories c WHERE c.id = p.category_id AND f_unaccent(lower(c.name)) LIKE '%' || f_unaccent(lower(${q})) || '%')
+      )`;
+    return rows.map((r) => r.id);
+  }
+
+  private async categoryIdsWithChildren(slug: string): Promise<bigint[]> {
+    const rows = await this.prisma.$queryRaw<{ id: bigint }[]>`
+      WITH RECURSIVE tree AS (
+        SELECT id FROM categories WHERE slug = ${slug}
+        UNION ALL SELECT c.id FROM categories c JOIN tree t ON c.parent_id = t.id
+      ) SELECT id FROM tree`;
+    return rows.map((r) => r.id);
+  }
 
   async findAll(query: ProductsQueryDto) {
     const page = query.page || 1;
-    const limit = query.limit || 20;
-    const skip = (page - 1) * limit;
+    const limit = query.limit || 12;
+    const where: Prisma.productsWhereInput = { status: 'active', deleted_at: null };
+    const and: Prisma.productsWhereInput[] = [];
+    let needs: ReturnType<ProductsService['detectNeeds']> = [];
 
-    const where: any = {
-      status: 'active',
-      deleted_at: null,
-    };
-
-    if (query.categorySlug) {
-      where.categories = { slug: query.categorySlug };
+    if (query.q?.trim()) {
+      const q = query.q.trim();
+      needs = this.detectNeeds(q);
+      const ids = await this.textSearchIds(q);
+      const or: Prisma.productsWhereInput[] = [{ id: { in: ids } }];
+      if (needs.length) or.push({ product_diets: { some: { diets: { code: { in: needs.flatMap((n) => n.diets) } } } } });
+      and.push({ OR: or });
     }
-
-    if (query.isFeatured !== undefined) {
-      where.is_featured = query.isFeatured;
+    if (query.category) {
+      const catIds = await this.categoryIdsWithChildren(query.category);
+      and.push({ category_id: { in: catIds } });
     }
-
-    if (query.nutriScore) {
-      where.nutri_score_grade = query.nutriScore.toUpperCase();
+    if (query.diets?.length) {
+      for (const code of query.diets) and.push({ product_diets: { some: { diets: { code } } } });
     }
-
-    if (query.dietCode) {
-      where.product_diets = {
-        some: {
-          diets: { code: query.dietCode },
-        },
-      };
+    if (query.excludeAllergens?.length) {
+      and.push({ product_allergens: { none: { allergens: { code: { in: query.excludeAllergens } } } } });
     }
-
-    if (query.excludeAllergen) {
-      where.product_allergens = {
-        none: {
-          allergens: { code: query.excludeAllergen },
-        },
-      };
+    if (query.minPrice !== undefined || query.maxPrice !== undefined) {
+      and.push({ product_variants: { some: { is_active: true, price: { gte: query.minPrice, lte: query.maxPrice } } } });
     }
+    if (query.minRating) and.push({ avg_rating: { gte: query.minRating } });
+    if (query.nutriScore?.length) and.push({ nutri_score_grade: { in: query.nutriScore.map((g) => g.toUpperCase()) } });
+    if (query.featured) and.push({ is_featured: true });
+    if (query.onSale) and.push({ product_variants: { some: { is_active: true, compare_at_price: { not: null } } } });
+    if (and.length) where.AND = and;
 
-    if (query.maxCalories) {
-      where.nutrition_facts = {
-        calories_kcal: { lte: query.maxCalories },
-      };
-    }
-
-    if (query.search) {
-      where.OR = [
-        { name: { contains: query.search, mode: 'insensitive' } },
-        { short_description: { contains: query.search, mode: 'insensitive' } },
-      ];
-    }
-
-    let orderBy: any = { created_at: 'desc' };
-    if (query.sortBy === SortBy.RATING) {
-      orderBy = { avg_rating: 'desc' };
-    } else if (query.sortBy === SortBy.BEST_SELLING) {
-      orderBy = { sold_count: 'desc' };
-    }
-
-    const [products, total] = await Promise.all([
-      this.prisma.products.findMany({
-        where,
-        skip,
-        take: limit,
-        orderBy,
-        include: {
-          categories: true,
-          brands: true,
-          product_variants: {
-            where: { is_active: true },
-            orderBy: [{ is_default: 'desc' }, { price: 'asc' }],
-          },
-          product_images: {
-            orderBy: [{ is_primary: 'desc' }, { sort_order: 'asc' }],
-          },
-          nutrition_facts: true,
-          product_diets: {
-            include: { diets: true },
-          },
-          product_allergens: {
-            include: { allergens: true },
-          },
-        },
-      }),
-      this.prisma.products.count({ where }),
-    ]);
-
-    const formatted = products.map((p) => {
-      const defaultVariant = p.product_variants[0] || null;
-      const primaryImage = p.product_images[0]?.url || 'https://placehold.co/600x600?text=Nutrio';
-
-      return {
-        id: Number(p.id),
-        name: p.name,
-        slug: p.slug,
-        shortDescription: p.short_description,
-        category: {
-          id: Number(p.categories.id),
-          name: p.categories.name,
-          slug: p.categories.slug,
-        },
-        brand: p.brands ? { id: Number(p.brands.id), name: p.brands.name } : null,
-        nutriScoreGrade: p.nutri_score_grade,
-        nutriScorePoints: p.nutri_score_points,
-        avgRating: Number(p.avg_rating),
-        reviewCount: p.review_count,
-        soldCount: p.sold_count,
-        isFeatured: p.is_featured,
-        primaryImage,
-        defaultVariant: defaultVariant
-          ? {
-              id: Number(defaultVariant.id),
-              sku: defaultVariant.sku,
-              name: defaultVariant.name,
-              price: Number(defaultVariant.price),
-              compareAtPrice: defaultVariant.compare_at_price ? Number(defaultVariant.compare_at_price) : null,
-              netWeightG: Number(defaultVariant.net_weight_g),
-            }
-          : null,
-        nutrition: p.nutrition_facts
-          ? {
-              caloriesKcal: Number(p.nutrition_facts.calories_kcal),
-              proteinG: Number(p.nutrition_facts.protein_g),
-              carbG: Number(p.nutrition_facts.carbohydrate_g),
-              fatG: Number(p.nutrition_facts.fat_g),
-              sugarG: Number(p.nutrition_facts.sugar_g),
-              fiberG: Number(p.nutrition_facts.fiber_g),
-            }
-          : null,
-        diets: p.product_diets.map((pd) => ({
-          code: pd.diets.code,
-          name: pd.diets.name_vi,
-          iconUrl: pd.diets.icon_url,
-        })),
-        allergens: p.product_allergens.map((pa) => ({
-          code: pa.allergens.code,
-          name: pa.allergens.name_vi,
-          relation: pa.relation,
-        })),
-      };
+    const matched = await this.prisma.products.findMany({
+      where,
+      select: { id: true, product_variants: { where: { is_active: true }, select: { id: true } } },
     });
+    let ids = matched.map((m) => m.id);
+    if (query.inStock) {
+      const stock = await this.stock.availableByVariant(matched.flatMap((m) => m.product_variants.map((v) => v.id)));
+      ids = matched.filter((m) => m.product_variants.some((v) => (stock.get(Number(v.id)) ?? 0) > 0)).map((m) => m.id);
+    }
 
+    const total = ids.length;
+    const pageIds = total
+      ? (
+          await this.prisma.$queryRaw<{ id: bigint }[]>`
+            SELECT p.id FROM products p
+            LEFT JOIN LATERAL (
+              SELECT v.price FROM product_variants v WHERE v.product_id = p.id AND v.is_active
+              ORDER BY v.is_default DESC, v.price LIMIT 1) dv ON true
+            WHERE p.id = ANY(${ids}::bigint[])
+            ORDER BY ${ORDER_SQL[query.sort || SortBy.NEWEST]}
+            LIMIT ${limit} OFFSET ${(page - 1) * limit}`
+        ).map((r) => r.id)
+      : [];
+
+    const data = await this.cardsByIds(pageIds);
     return {
-      data: formatted,
-      meta: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
+      data,
+      meta: pageMeta(page, limit, total),
+      detectedNeeds: needs.map((n) => ({ label: n.label, diets: n.diets })),
     };
   }
 
-  async findBySlug(slug: string) {
+  /** Product cards in the same order as `ids`, with live stock. */
+  async cardsByIds(ids: (bigint | number)[], { onlyActive = true } = {}) {
+    if (!ids.length) return [];
+    const big = ids.map((i) => BigInt(i));
+    const rows = await this.prisma.products.findMany({
+      where: { id: { in: big }, ...(onlyActive ? { status: 'active', deleted_at: null } : {}) },
+      include: productCardInclude,
+    });
+    const stock = await this.stock.availableByVariant(rows.flatMap((r) => r.product_variants.map((v) => v.id)));
+    const byId = new Map(rows.map((r) => [Number(r.id), toProductCard(r, stock)]));
+    return big.map((id) => byId.get(Number(id))).filter((x): x is NonNullable<typeof x> => !!x);
+  }
+
+  async collections(limit = 8) {
+    const base = { status: 'active' as const, deleted_at: null };
+    const pick = async (orderBy: Prisma.productsOrderByWithRelationInput, extra: Prisma.productsWhereInput = {}) =>
+      this.cardsByIds((await this.prisma.products.findMany({ where: { ...base, ...extra }, orderBy, take: limit, select: { id: true } })).map((r) => r.id));
+    const [featured, bestSellers, newest] = await Promise.all([
+      pick({ sold_count: 'desc' }, { is_featured: true }),
+      pick({ sold_count: 'desc' }),
+      pick({ created_at: 'desc' }),
+    ]);
+    return { featured, bestSellers, newest };
+  }
+
+  async suggest(q: string) {
+    const term = (q || '').trim();
+    if (term.length < 1) return { products: [], categories: [], needs: [] };
+    const ids = (await this.textSearchIds(term)).slice(0, 6);
+    const [cards, categories] = await Promise.all([
+      this.cardsByIds(ids),
+      this.prisma.$queryRaw<{ name: string; slug: string }[]>`
+        SELECT name, slug FROM categories WHERE is_active AND f_unaccent(lower(name)) LIKE '%' || f_unaccent(lower(${term})) || '%' LIMIT 4`,
+    ]);
+    return {
+      products: cards.map((c) => ({ id: c.id, name: c.name, slug: c.slug, image: c.image, price: c.defaultVariant?.price ?? null, category: c.category.name })),
+      categories,
+      needs: this.detectNeeds(term).map((n) => ({ label: n.label, diets: n.diets })),
+    };
+  }
+
+  async logSearch(q: string, resultCount: number, userId?: number) {
+    const term = q.trim().slice(0, 300);
+    if (!term) return;
+    await this.prisma.search_logs.create({ data: { query: term, result_count: resultCount, user_id: userId ? BigInt(userId) : null } });
+  }
+
+  async popularSearches() {
+    const rows = await this.prisma.$queryRaw<{ query: string }[]>`
+      SELECT lower(query) AS query FROM search_logs WHERE created_at > now() - interval '60 days' AND result_count > 0
+      GROUP BY lower(query) ORDER BY count(*) DESC LIMIT 8`;
+    return rows.map((r) => r.query);
+  }
+
+  async findBySlug(slug: string, userId?: number) {
     const product = await this.prisma.products.findUnique({
       where: { slug },
       include: {
-        categories: true,
+        ...productCardInclude,
+        product_images: { orderBy: [{ is_primary: 'desc' }, { sort_order: 'asc' }] },
         brands: true,
         farms: true,
-        suppliers: true,
-        product_variants: {
-          where: { is_active: true },
-          orderBy: [{ is_default: 'desc' }, { price: 'asc' }],
-          include: {
-            product_batches: {
-              where: {
-                OR: [{ expires_on: null }, { expires_on: { gte: new Date() } }],
-              },
-              include: {
-                inventory: true,
-              },
-            },
-          },
-        },
-        product_images: {
-          orderBy: [{ is_primary: 'desc' }, { sort_order: 'asc' }],
-        },
-        nutrition_facts: true,
-        product_ingredients: {
-          include: { ingredients: true },
-          orderBy: { sort_order: 'asc' },
-        },
-        product_diets: {
-          include: { diets: true },
-        },
-        product_allergens: {
-          include: { allergens: true },
-        },
-        product_certifications: {
-          include: { certifications: true },
-        },
-        product_substitutes_product_substitutes_product_idToproducts: {
-          include: {
-            products_product_substitutes_substitute_idToproducts: {
-              include: {
-                product_variants: true,
-                product_images: true,
-              },
-            },
-          },
-        },
+        product_ingredients: { include: { ingredients: true }, orderBy: { sort_order: 'asc' } },
+        product_certifications: { include: { certifications: true } },
+        product_substitutes_product_substitutes_product_idToproducts: { orderBy: { priority: 'asc' }, select: { substitute_id: true, reason: true } },
       },
     });
+    if (!product || product.deleted_at || product.status !== 'active') throw new NotFoundException('Sản phẩm không tồn tại hoặc đã ngừng kinh doanh');
 
-    if (!product || product.deleted_at || product.status !== 'active') {
-      throw new NotFoundException(`Không tìm thấy sản phẩm: ${slug}`);
-    }
+    const variantIds = product.product_variants.map((v) => v.id);
+    const [stock, expiry, ratingDist, wish] = await Promise.all([
+      this.stock.availableByVariant(variantIds),
+      this.stock.nearestExpiry(variantIds),
+      this.prisma.reviews.groupBy({ by: ['rating'], where: { product_id: product.id, status: 'approved' }, _count: true }),
+      userId ? this.prisma.wishlists.findUnique({ where: { user_id_product_id: { user_id: BigInt(userId), product_id: product.id } } }) : null,
+      this.prisma.products.update({ where: { id: product.id }, data: { view_count: { increment: 1 } } }),
+      this.prisma.product_views.create({ data: { product_id: product.id, user_id: userId ? BigInt(userId) : null } }),
+    ]);
 
-    // Tăng lượt xem
-    await this.prisma.products.update({
-      where: { id: product.id },
-      data: { view_count: { increment: 1 } },
-    });
+    const subs = await this.cardsByIds(product.product_substitutes_product_substitutes_product_idToproducts.map((s) => s.substitute_id));
+    const card = toProductCard(product, stock);
 
     return {
-      id: Number(product.id),
-      name: product.name,
-      slug: product.slug,
-      shortDescription: product.short_description,
+      ...card,
       description: product.description,
       originCountry: product.origin_country,
       storageInstruction: product.storage_instruction,
       usageInstruction: product.usage_instruction,
       shelfLifeDays: product.shelf_life_days,
-      nutriScoreGrade: product.nutri_score_grade,
       nutriScorePoints: product.nutri_score_points,
-      avgRating: Number(product.avg_rating),
-      reviewCount: product.review_count,
-      soldCount: product.sold_count,
-      viewCount: product.view_count + 1,
-      category: {
-        id: Number(product.categories.id),
-        name: product.categories.name,
-        slug: product.categories.slug,
-      },
-      brand: product.brands ? { id: Number(product.brands.id), name: product.brands.name, country: product.brands.country } : null,
-      farm: product.farms
-        ? {
-            id: Number(product.farms.id),
-            name: product.farms.name,
-            province: product.farms.province,
-            address: product.farms.address,
-            description: product.farms.description,
-          }
-        : null,
-      images: product.product_images.map((img) => ({
-        id: Number(img.id),
-        url: img.url,
-        altText: img.alt_text,
-        isPrimary: img.is_primary,
+      metaTitle: product.meta_title,
+      metaDescription: product.meta_description,
+      images: product.product_images.map((i) => ({ id: Number(i.id), url: i.url, altText: i.alt_text })),
+      variants: product.product_variants.map((v) => ({
+        ...toVariant(v, stock.get(Number(v.id))),
+        nearestExpiry: expiry.get(Number(v.id)) ?? null,
       })),
-      variants: product.product_variants.map((v) => {
-        const totalStock = v.product_batches.reduce((sum, b) => {
-          return sum + b.inventory.reduce((iSum, inv) => iSum + (inv.quantity_on_hand - inv.quantity_reserved), 0);
-        }, 0);
-
-        return {
-          id: Number(v.id),
-          sku: v.sku,
-          barcode: v.barcode,
-          name: v.name,
-          netWeightG: Number(v.net_weight_g),
-          unitLabel: v.unit_label,
-          price: Number(v.price),
-          compareAtPrice: v.compare_at_price ? Number(v.compare_at_price) : null,
-          isDefault: v.is_default,
-          availableStock: Math.max(0, totalStock),
-        };
-      }),
-      nutritionFacts: product.nutrition_facts
-        ? {
-            servingSizeG: product.nutrition_facts.serving_size_g ? Number(product.nutrition_facts.serving_size_g) : null,
-            caloriesKcal: Number(product.nutrition_facts.calories_kcal),
-            proteinG: Number(product.nutrition_facts.protein_g),
-            carbohydrateG: Number(product.nutrition_facts.carbohydrate_g),
-            sugarG: Number(product.nutrition_facts.sugar_g),
-            addedSugarG: Number(product.nutrition_facts.added_sugar_g),
-            fiberG: Number(product.nutrition_facts.fiber_g),
-            fatG: Number(product.nutrition_facts.fat_g),
-            saturatedFatG: Number(product.nutrition_facts.saturated_fat_g),
-            sodiumMg: Number(product.nutrition_facts.sodium_mg),
-            glycemicIndex: product.nutrition_facts.glycemic_index,
-          }
-        : null,
-      ingredients: product.product_ingredients.map((pi) => ({
-        name: pi.ingredients.name,
-        nameEn: pi.ingredients.name_en,
-        percentage: pi.percentage ? Number(pi.percentage) : null,
-      })),
-      diets: product.product_diets.map((pd) => ({
-        code: pd.diets.code,
-        name: pd.diets.name_vi,
-        iconUrl: pd.diets.icon_url,
-      })),
-      allergens: product.product_allergens.map((pa) => ({
-        code: pa.allergens.code,
-        name: pa.allergens.name_vi,
-        relation: pa.relation,
-      })),
+      nutritionFacts: nutritionPer100g(product.nutrition_facts),
+      ingredients: product.product_ingredients.map((pi) => ({ name: pi.ingredients.name, percentage: pi.percentage ? Number(pi.percentage) : null })),
       certifications: product.product_certifications.map((pc) => ({
         code: pc.certifications.code,
         name: pc.certifications.name,
         issuer: pc.certifications.issuer,
         certificateNumber: pc.certificate_number,
       })),
-      substitutes: product.product_substitutes_product_substitutes_product_idToproducts.map((sub) => {
-        const subProd = sub.products_product_substitutes_substitute_idToproducts;
-        return {
-          id: Number(subProd.id),
-          name: subProd.name,
-          slug: subProd.slug,
-          reason: sub.reason,
-          price: subProd.product_variants[0] ? Number(subProd.product_variants[0].price) : null,
-          image: subProd.product_images[0]?.url || null,
-        };
-      }),
+      brand: product.brands ? { name: product.brands.name, country: product.brands.country } : null,
+      farm: product.farms ? { name: product.farms.name, province: product.farms.province, description: product.farms.description } : null,
+      ratingDistribution: [5, 4, 3, 2, 1].map((star) => ({ star, count: ratingDist.find((r) => r.rating === star)?._count ?? 0 })),
+      isWishlisted: !!wish,
+      healthierAlternatives: subs.map((s) => ({ ...s, reason: product.product_substitutes_product_substitutes_product_idToproducts.find((x) => Number(x.substitute_id) === s.id)?.reason })),
     };
   }
 
-  async getTraceabilityByQr(qrCode: string) {
+  async related(productId: number, limit = 8) {
+    const p = await this.prisma.products.findUnique({ where: { id: BigInt(productId) }, include: { product_diets: true } });
+    if (!p) return [];
+    const ids = await this.prisma.products.findMany({
+      where: {
+        id: { not: p.id },
+        status: 'active',
+        deleted_at: null,
+        OR: [{ category_id: p.category_id }, { product_diets: { some: { diet_id: { in: p.product_diets.map((d) => d.diet_id) } } } }],
+      },
+      orderBy: [{ sold_count: 'desc' }],
+      take: limit,
+      select: { id: true },
+    });
+    return this.cardsByIds(ids.map((i) => i.id));
+  }
+
+  /** "Thường mua cùng": co-purchase statistics from real orders, topped up with same-category best sellers. */
+  async frequentlyBoughtTogether(productId: number, limit = 3) {
+    const pid = BigInt(productId);
+    const rows = await this.prisma.$queryRaw<{ pid: bigint }[]>`
+      SELECT b.product_id AS pid FROM order_items a
+      JOIN order_items b ON b.order_id = a.order_id AND b.product_id IS NOT NULL AND b.product_id <> a.product_id
+      JOIN orders o ON o.id = a.order_id AND o.status <> 'cancelled'
+      WHERE a.product_id = ${pid}
+      GROUP BY b.product_id ORDER BY count(*) DESC LIMIT ${limit}`;
+    let ids = rows.map((r) => r.pid);
+    if (ids.length < limit) {
+      const more = await this.prisma.products.findMany({
+        where: { id: { notIn: [pid, ...ids] }, status: 'active', deleted_at: null },
+        orderBy: { sold_count: 'desc' },
+        take: limit - ids.length,
+        select: { id: true },
+      });
+      ids = [...ids, ...more.map((m) => m.id)];
+    }
+    return this.cardsByIds(ids);
+  }
+
+  async compare(ids: number[]) {
+    const cards = await this.cardsByIds(ids.slice(0, 3));
+    const extra = await this.prisma.products.findMany({
+      where: { id: { in: cards.map((c) => BigInt(c.id)) } },
+      include: { product_ingredients: { include: { ingredients: true }, orderBy: { sort_order: 'asc' } } },
+    });
+    return cards.map((c) => ({
+      ...c,
+      ingredients: extra.find((e) => Number(e.id) === c.id)?.product_ingredients.map((pi) => pi.ingredients.name) ?? [],
+    }));
+  }
+
+  async traceability(qrCode: string) {
     const batch = await this.prisma.product_batches.findUnique({
       where: { qr_code: qrCode },
-      include: {
-        product_variants: {
-          include: {
-            products: true,
-          },
-        },
-        farms: true,
-        suppliers: true,
-      },
+      include: { product_variants: { include: { products: { include: { product_images: { take: 1 } } } } }, farms: true, suppliers: true },
     });
-
-    if (!batch) {
-      throw new NotFoundException(`Không tìm thấy thông tin lô hàng từ mã QR: ${qrCode}`);
-    }
-
+    if (!batch) throw new NotFoundException('Không tìm thấy lô hàng với mã QR này');
+    const p = batch.product_variants.products;
     return {
       batchCode: batch.batch_code,
-      qrCode: batch.qr_code,
-      product: {
-        id: Number(batch.product_variants.products.id),
-        name: batch.product_variants.products.name,
-        slug: batch.product_variants.products.slug,
-        variantName: batch.product_variants.name,
-      },
-      farm: batch.farms
-        ? {
-            name: batch.farms.name,
-            owner: batch.farms.owner_name,
-            province: batch.farms.province,
-            address: batch.farms.address,
-            description: batch.farms.description,
-          }
-        : null,
-      supplier: batch.suppliers ? { name: batch.suppliers.name, contact: batch.suppliers.contact_name } : null,
-      dates: {
-        harvestedOn: batch.harvested_on,
-        manufacturedOn: batch.manufactured_on,
-        expiresOn: batch.expires_on,
-      },
-      labTest: {
-        url: batch.lab_test_url,
-        resultNote: batch.lab_result_note,
-      },
+      product: { name: p.name, slug: p.slug, variant: batch.product_variants.name, image: p.product_images[0]?.url || PLACEHOLDER_IMG },
+      farm: batch.farms ? { name: batch.farms.name, province: batch.farms.province, address: batch.farms.address, description: batch.farms.description } : null,
+      supplier: batch.suppliers?.name ?? null,
+      harvestedOn: batch.harvested_on,
+      manufacturedOn: batch.manufactured_on,
+      expiresOn: batch.expires_on,
+      labResult: batch.lab_result_note,
     };
   }
 }

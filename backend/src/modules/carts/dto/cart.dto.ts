@@ -1,43 +1,41 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsInt, IsNotEmpty, IsOptional, IsString, Min } from 'class-validator';
+import { Type } from 'class-transformer';
+import { ArrayMaxSize, IsArray, IsInt, IsNotEmpty, IsOptional, IsString, Max, MaxLength, Min, ValidateNested } from 'class-validator';
 
 export class AddCartItemDto {
-  @ApiPropertyOptional({ example: 1, description: 'ID của variant sản phẩm' })
-  @IsOptional()
-  @IsInt()
+  @ApiPropertyOptional({ example: 1 })
+  @IsOptional() @IsInt() @Min(1)
   variantId?: number;
 
-  @ApiPropertyOptional({ example: 1, description: 'ID của bundle/combo (nếu mua theo combo)' })
-  @IsOptional()
-  @IsInt()
+  @ApiPropertyOptional()
+  @IsOptional() @IsInt() @Min(1)
   bundleId?: number;
 
-  @ApiProperty({ example: 1, description: 'Số lượng mua' })
-  @IsInt()
-  @Min(1)
+  @ApiProperty({ example: 1 })
+  @IsInt() @Min(1) @Max(99)
   quantity: number;
+}
 
-  @ApiPropertyOptional({ example: 'guest-session-uuid-12345', description: 'Session token dành cho khách vãng lai chưa đăng nhập' })
-  @IsOptional()
-  @IsString()
-  sessionToken?: string;
+export class BulkAddDto {
+  @ApiProperty({ type: [AddCartItemDto] })
+  @IsArray() @ArrayMaxSize(60) @ValidateNested({ each: true }) @Type(() => AddCartItemDto)
+  items: AddCartItemDto[];
 }
 
 export class UpdateCartItemDto {
-  @ApiProperty({ example: 2, description: 'Số lượng mới' })
-  @IsInt()
-  @Min(1)
+  @ApiProperty({ example: 2 })
+  @IsInt() @Min(1) @Max(99)
   quantity: number;
 }
 
 export class ApplyCouponDto {
-  @ApiProperty({ example: 'WELCOME10', description: 'Mã giảm giá voucher' })
-  @IsString()
-  @IsNotEmpty()
-  couponCode: string;
+  @ApiProperty({ example: 'WELCOME10' })
+  @IsString() @IsNotEmpty({ message: 'Vui lòng nhập mã giảm giá' }) @MaxLength(40)
+  code: string;
+}
 
-  @ApiPropertyOptional({ example: 'guest-session-uuid-12345', description: 'Session token nếu là khách vãng lai' })
-  @IsOptional()
-  @IsString()
-  sessionToken?: string;
+export class MergeCartDto {
+  @ApiProperty()
+  @IsString() @MaxLength(80)
+  guestToken: string;
 }

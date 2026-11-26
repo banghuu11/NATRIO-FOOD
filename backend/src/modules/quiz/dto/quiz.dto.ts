@@ -1,13 +1,17 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsArray, IsInt, IsOptional, IsString } from 'class-validator';
+import { ApiProperty } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
+import { ArrayMaxSize, ArrayMinSize, IsArray, IsInt, Min, ValidateNested } from 'class-validator';
 
-export class SubmitQuizAnswerDto {
-  @ApiPropertyOptional({ example: 'quiz-session-uuid', description: 'Session token nếu đã có phiên trước' })
-  @IsOptional()
-  @IsString()
-  sessionToken?: string;
+export class QuizAnswerDto {
+  @ApiProperty() @IsInt() @Min(1)
+  questionId: number;
 
-  @ApiProperty({ example: [1, 4, 7], description: 'Danh sách ID các lựa chọn (option_id) đã chọn' })
-  @IsArray()
+  @ApiProperty({ type: [Number] }) @IsArray() @ArrayMinSize(1) @ArrayMaxSize(10) @IsInt({ each: true })
   optionIds: number[];
+}
+
+export class SubmitQuizDto {
+  @ApiProperty({ type: [QuizAnswerDto] })
+  @IsArray() @ArrayMinSize(1) @ArrayMaxSize(20) @ValidateNested({ each: true }) @Type(() => QuizAnswerDto)
+  answers: QuizAnswerDto[];
 }

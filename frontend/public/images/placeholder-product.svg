@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="600" viewBox="0 0 600 600">
+  <rect width="600" height="600" fill="#f1e8d9"/>
+  <g fill="none" stroke="#c4975f" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" opacity="0.7">
+    <path d="M300 190c-60 0-100 50-100 110s40 120 100 120 100-60 100-120-40-110-100-110z"/>
+    <path d="M300 190v-30M300 160c20-25 50-30 70-20"/>
+  </g>
+  <text x="300" y="490" text-anchor="middle" font-family="Arial, sans-serif" font-size="30" font-weight="700" fill="#a97a45" letter-spacing="4">NUTRIO</text>
+</svg>

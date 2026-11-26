@@ -1,40 +1,28 @@
-import { Controller, Get, Param, ParseIntPipe, Query } from '@nestjs/common';
-import { ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { Controller, Get, Param } from '@nestjs/common';
+import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CategoriesService } from './categories.service';
+import { Public } from '../../common/decorators/roles.decorator';
 
 @ApiTags('Categories')
+@Public()
 @Controller('categories')
 export class CategoriesController {
-  constructor(private readonly categoriesService: CategoriesService) {}
+  constructor(private readonly categories: CategoriesService) {}
 
   @Get()
-  @ApiOperation({ summary: 'Lấy danh sách tất cả danh mục sản phẩm (Granola, Hạt, Sữa hạt...)' })
-  @ApiResponse({ status: 200, description: 'Danh sách danh mục đang hoạt động' })
-  findAll() {
-    return this.categoriesService.findAllCategories();
+  @ApiOperation({ summary: 'Cây danh mục sản phẩm (cha/con) kèm số lượng sản phẩm' })
+  tree() {
+    return this.categories.tree();
   }
 
-  @Get('brands')
-  @ApiOperation({ summary: 'Lấy danh sách các thương hiệu đối tác' })
-  findAllBrands() {
-    return this.categoriesService.findAllBrands();
-  }
-
-  @Get('certifications')
-  @ApiOperation({ summary: 'Lấy danh sách các chứng nhận hữu cơ & an toàn thực phẩm (USDA, VietGAP, HACCP)' })
-  findAllCertifications() {
-    return this.categoriesService.findAllCertifications();
-  }
-
-  @Get('farms')
-  @ApiOperation({ summary: 'Lấy danh sách các nông trại hữu cơ liên kết' })
-  findAllFarms() {
-    return this.categoriesService.findAllFarms();
+  @Get('meta')
+  @ApiOperation({ summary: 'Danh sách chế độ ăn, thành phần dị ứng, chứng nhận (dùng cho bộ lọc)' })
+  meta() {
+    return this.categories.meta();
   }
 
   @Get(':slug')
-  @ApiOperation({ summary: 'Lấy chi tiết danh mục theo slug' })
-  findBySlug(@Param('slug') slug: string) {
-    return this.categoriesService.findCategoryBySlug(slug);
+  findOne(@Param('slug') slug: string) {
+    return this.categories.findBySlug(slug);
   }
 }

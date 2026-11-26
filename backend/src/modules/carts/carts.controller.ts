@@ -1,64 +1,75 @@
-import { Body, Controller, Delete, Get, Param, ParseIntPipe, Post, Put, Query, Req, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { CartsService } from './carts.service';
-import { AddCartItemDto, ApplyCouponDto, UpdateCartItemDto } from './dto/cart.dto';
-import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { Body, Controller, Delete, Get, Headers, Param, ParseIntPipe, Patch, Post, Query } from '@nestjs/common';
+import { ApiBearerAuth, ApiHeader, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { CartsService, CartOwner } from './carts.service';
+import { AddCartItemDto, ApplyCouponDto, BulkAddDto, MergeCartDto, UpdateCartItemDto } from './dto/cart.dto';
 import { Public } from '../../common/decorators/roles.decorator';
+import { CurrentUser, CurrentUserPayload } from '../../common/decorators/current-user.decorator';
 
 @ApiTags('Carts')
-@Controller('carts')
+@ApiHeader({ name: 'x-cart-token', required: false, description: 'Mã giỏ hàng của khách chưa đăng nhập' })
+@Controller('cart')
 export class CartsController {
-  constructor(private readonly cartsService: CartsService) {}
+  constructor(private readonly carts: CartsService) {}
 
+  private owner(user: CurrentUserPayload | undefined, token?: string): CartOwner {
+    return user ? { userId: user.id } : { token };
+  }
+
+  @Public()
   @Get()
-  @Public()
-  @ApiOperation({ summary: 'Lấy thông tin giỏ hàng & bảng dinh dưỡng tổng hợp của các món trong giỏ' })
-  @ApiQuery({ name: 'sessionToken', required: false, description: 'Token giỏ hàng khách vãng lai' })
-  getCart(@Query('sessionToken') sessionToken?: string, @Req() req?: any) {
-    const userId = req?.user?.id;
-    return this.cartsService.getCart(userId, sessionToken);
+  @ApiOperation({ summary: 'Giỏ hàng + tổng tiền + dinh dưỡng (selected = id các dòng muốn thanh toán)' })
+  get(@CurrentUser() user: CurrentUserPayload, @Headers('x-cart-token') token?: string, @Query('selected') selected?: string) {
+    const ids = selected ? selected.split(',').map(Number).filter((n) => n > 0) : undefined;
+    return this.carts.getCart(this.owner(user, token), ids);
   }
 
+  @Public()
   @Post('items')
-  @Public()
-  @ApiOperation({ summary: 'Thêm sản phẩm hoặc combo vào giỏ hàng' })
-  addItem(@Body() dto: AddCartItemDto, @Req() req?: any) {
-    const userId = req?.user?.id;
-    return this.cartsService.addItem(userId, dto);
+  add(@CurrentUser() user: CurrentUserPayload, @Body() dto: AddCartItemDto, @Headers('x-cart-token') token?: string) {
+    return this.carts.addItem(this.owner(user, token), dto);
   }
 
-  @Put('items/:id')
   @Public()
-  @ApiOperation({ summary: 'Cập nhật số lượng sản phẩm trong giỏ' })
-  @ApiQuery({ name: 'sessionToken', required: false })
-  updateItem(
-    @Param('id', ParseIntPipe) id: number,
-    @Body() dto: UpdateCartItemDto,
-    @Query('sessionToken') sessionToken?: string,
-    @Req() req?: any,
-  ) {
-    const userId = req?.user?.id;
-    return this.cartsService.updateItemQuantity(id, dto, userId, sessionToken);
+  @Post('items/bulk')
+  @ApiOperation({ summary: 'Thêm nhiều sản phẩm một lần (công thức, thực đơn, mua lại)' })
+  bulk(@CurrentUser() user: CurrentUserPayload, @Body() dto: BulkAddDto, @Headers('x-cart-token') token?: string) {
+    return this.carts.addMany(this.owner(user, token), dto.items);
   }
 
+  @Public()
+  @Patch('items/:id')
+  update(@CurrentUser() user: CurrentUserPayload, @Param('id', ParseIntPipe) id: number, @Body() dto: UpdateCartItemDto, @Headers('x-cart-token') token?: string) {
+    return this.carts.updateQuantity(this.owner(user, token), id, dto.quantity);
+  }
+
+  @Public()
   @Delete('items/:id')
-  @Public()
-  @ApiOperation({ summary: 'Xóa sản phẩm khỏi giỏ hàng' })
-  @ApiQuery({ name: 'sessionToken', required: false })
-  removeItem(
-    @Param('id', ParseIntPipe) id: number,
-    @Query('sessionToken') sessionToken?: string,
-    @Req() req?: any,
-  ) {
-    const userId = req?.user?.id;
-    return this.cartsService.removeItem(id, userId, sessionToken);
+  remove(@CurrentUser() user: CurrentUserPayload, @Param('id', ParseIntPipe) id: number, @Headers('x-cart-token') token?: string) {
+    return this.carts.removeItem(this.owner(user, token), id);
   }
 
-  @Post('apply-coupon')
   @Public()
-  @ApiOperation({ summary: 'Áp dụng mã giảm giá (Voucher Coupon) vào giỏ hàng' })
-  applyCoupon(@Body() dto: ApplyCouponDto, @Req() req?: any) {
-    const userId = req?.user?.id;
-    return this.cartsService.applyCoupon(dto, userId);
+  @Delete()
+  clear(@CurrentUser() user: CurrentUserPayload, @Headers('x-cart-token') token?: string) {
+    return this.carts.clear(this.owner(user, token));
+  }
+
+  @Public()
+  @Post('coupon')
+  applyCoupon(@CurrentUser() user: CurrentUserPayload, @Body() dto: ApplyCouponDto, @Headers('x-cart-token') token?: string) {
+    return this.carts.applyCoupon(this.owner(user, token), dto.code);
+  }
+
+  @Public()
+  @Delete('coupon')
+  removeCoupon(@CurrentUser() user: CurrentUserPayload, @Headers('x-cart-token') token?: string) {
+    return this.carts.removeCoupon(this.owner(user, token));
+  }
+
+  @ApiBearerAuth('JWT-auth')
+  @Post('merge')
+  @ApiOperation({ summary: 'Gộp giỏ hàng khách vãng lai vào tài khoản sau khi đăng nhập' })
+  merge(@CurrentUser() user: CurrentUserPayload, @Body() dto: MergeCartDto) {
+    return this.carts.merge(user.id, dto.guestToken);
   }
 }

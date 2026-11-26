@@ -1,29 +1,39 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsInt, IsNotEmpty, IsNumber, IsOptional, IsString, Max, Min } from 'class-validator';
+import { Transform } from 'class-transformer';
+import { ArrayMaxSize, IsArray, IsInt, IsOptional, IsString, IsUrl, Max, MaxLength, Min, MinLength } from 'class-validator';
+
+/** Strips HTML tags and control chars from user text (defence in depth against XSS). */
+export const cleanText = ({ value }: { value: unknown }) =>
+  // eslint-disable-next-line no-control-regex -- stripping control characters is intentional
+  typeof value === 'string' ? value.replace(/<[^>]*>/g, '').replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '').trim() : value;
 
 export class CreateReviewDto {
-  @ApiProperty({ example: 1, description: 'ID sản phẩm đánh giá' })
-  @IsInt()
-  productId: number;
+  @ApiProperty() @IsInt() @Min(1)
+  orderItemId: number;
 
-  @ApiPropertyOptional({ example: 1, description: 'ID mục đơn hàng đã mua (để gắn nhãn Đã mua hàng)' })
-  @IsOptional()
-  @IsInt()
-  orderItemId?: number;
-
-  @ApiProperty({ example: 5, description: 'Số sao đánh giá (1 - 5)' })
-  @IsNumber()
-  @Min(1)
-  @Max(5)
+  @ApiProperty({ minimum: 1, maximum: 5 }) @IsInt() @Min(1, { message: 'Vui lòng chọn số sao' }) @Max(5)
   rating: number;
 
-  @ApiPropertyOptional({ example: 'Granola rất thơm và giòn, không bị ngọt gắt', description: 'Tiêu đề đánh giá' })
-  @IsOptional()
-  @IsString()
+  @ApiPropertyOptional() @IsOptional() @Transform(cleanText) @IsString() @MaxLength(200)
   title?: string;
 
-  @ApiProperty({ example: 'Sản phẩm giao nhanh, đóng gói hũ thủy tinh kỹ lưỡng, hạt to đều chất lượng.', description: 'Nội dung nhận xét' })
-  @IsString()
-  @IsNotEmpty()
-  content: string;
+  @ApiPropertyOptional() @IsOptional() @Transform(cleanText) @IsString() @MinLength(10, { message: 'Nhận xét cần ít nhất 10 ký tự' }) @MaxLength(2000)
+  content?: string;
+
+  @ApiPropertyOptional({ type: [String] }) @IsOptional() @IsArray() @ArrayMaxSize(5) @IsUrl({ require_tld: false }, { each: true })
+  images?: string[];
+}
+
+export class UpdateReviewDto {
+  @ApiPropertyOptional() @IsOptional() @IsInt() @Min(1) @Max(5)
+  rating?: number;
+
+  @ApiPropertyOptional() @IsOptional() @Transform(cleanText) @IsString() @MaxLength(200)
+  title?: string;
+
+  @ApiPropertyOptional() @IsOptional() @Transform(cleanText) @IsString() @MinLength(10, { message: 'Nhận xét cần ít nhất 10 ký tự' }) @MaxLength(2000)
+  content?: string;
+
+  @ApiPropertyOptional({ type: [String] }) @IsOptional() @IsArray() @ArrayMaxSize(5) @IsUrl({ require_tld: false }, { each: true })
+  images?: string[];
 }

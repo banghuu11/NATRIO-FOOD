@@ -1,0 +1,34 @@
+flowchart TB
+  subgraph domain1["Miền 1: Người dùng, Phân quyền & Thành viên (23 bảng)"]
+    domain1_g0["addresses<br/>chat_sessions<br/>loyalty_accounts<br/>loyalty_transactions<br/>membership_tiers<br/>notification_preferences"]
+    domain1_g1["notifications<br/>oauth_accounts<br/>permissions<br/>quiz_sessions<br/>referrals<br/>role_permissions"]
+    domain1_g2["roles<br/>user_allergens<br/>user_badges<br/>user_challenges<br/>user_diets<br/>user_meal_plans"]
+    domain1_g3["user_roles<br/>user_sessions<br/>users<br/>verification_tokens<br/>wishlists"]
+  end
+  subgraph domain2["Miền 2: Sản phẩm, Dinh dưỡng & Kho FEFO (27 bảng)"]
+    domain2_g0["allergens<br/>blog_categories<br/>brands<br/>categories<br/>certifications<br/>diets"]
+    domain2_g1["farms<br/>flash_sale_items<br/>flash_sales<br/>inventory<br/>nutrition_facts<br/>product_alerts"]
+    domain2_g2["product_allergens<br/>product_batches<br/>product_certifications<br/>product_diets<br/>product_images<br/>product_ingredients"]
+    domain2_g3["product_substitutes<br/>product_tags<br/>product_variants<br/>product_views<br/>products<br/>recipe_diets"]
+    domain2_g4["stock_movements<br/>suppliers<br/>warehouses"]
+  end
+  subgraph domain3["Miền 3: Giỏ hàng, Đơn hàng & Thanh toán (21 bảng)"]
+    domain3_g0["cart_items<br/>carts<br/>coupon_usages<br/>coupons<br/>order_allocations<br/>order_items"]
+    domain3_g1["order_status_history<br/>orders<br/>payment_transactions<br/>payments<br/>refunds<br/>review_media"]
+    domain3_g2["review_votes<br/>reviews<br/>shipment_events<br/>shipments<br/>shipping_methods<br/>subscription_items"]
+    domain3_g3["subscription_plans<br/>subscription_skips<br/>subscriptions"]
+  end
+  subgraph domain4["Miền 4: Sức khỏe, Quiz, Thực đơn & Hệ thống (37 bảng)"]
+    domain4_g0["audit_logs<br/>badges<br/>banners<br/>blog_comments<br/>blog_post_tags<br/>blog_posts"]
+    domain4_g1["bundle_items<br/>bundles<br/>challenge_checkins<br/>challenges<br/>chat_messages<br/>cms_pages"]
+    domain4_g2["contact_messages<br/>food_diary<br/>health_profiles<br/>ingredients<br/>meal_plan_items<br/>meal_plans"]
+    domain4_g3["newsletter_subscribers<br/>quiz_answers<br/>quiz_option_effects<br/>quiz_options<br/>quiz_questions<br/>quiz_recommendations"]
+    domain4_g4["recipe_favorites<br/>recipe_ingredients<br/>recipe_steps<br/>recipes<br/>return_items<br/>returns"]
+    domain4_g5["search_logs<br/>settings<br/>sql_migrations<br/>tags<br/>variant_price_history<br/>water_logs"]
+    domain4_g6["weight_logs"]
+  end
+  domain1 -->|đặt hàng / sở hữu| domain3
+  domain1 -->|hồ sơ sức khỏe| domain4
+  domain2 -->|sản phẩm / tồn kho| domain3
+  domain2 -->|nguyên liệu / dinh dưỡng| domain4
+  domain4 -->|gợi ý / thực đơn| domain3

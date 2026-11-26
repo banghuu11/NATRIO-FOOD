@@ -1,29 +1,26 @@
-import type { Metadata } from 'next';
-import { Inter } from 'next/font/google';
+import type { Metadata, Viewport } from 'next';
+import { Be_Vietnam_Pro, Fraunces } from 'next/font/google';
 import './globals.css';
-import { Toaster } from 'sonner';
+import { Providers } from './providers';
 
-const inter = Inter({ 
-  subsets: ['latin', 'vietnamese'],
-  variable: '--font-inter',
-});
+const body = Be_Vietnam_Pro({ subsets: ['latin', 'vietnamese'], weight: ['400', '500', '600', '700'], variable: '--font-body', display: 'swap' });
+const heading = Fraunces({ subsets: ['latin', 'vietnamese'], weight: ['500', '600', '700'], variable: '--font-heading', display: 'swap' });
 
 export const metadata: Metadata = {
-  title: 'NUTRIO - Thế Giới Hạt Dinh Dưỡng, Granola & Khẩu Phần Ăn Sạch Cá Nhân Hóa',
-  description: 'Chuyên cung cấp Hạt Macca Tây Nguyên, Hạnh nhân Mỹ, Hạt điều Bình Phước, Óc chó Chandler và Granola sấy mộc. Tự động tính toán Calo & định lượng khẩu phần theo TDEE.',
-  keywords: ['hạt dinh dưỡng', 'hạt macca', 'hạnh nhân mỹ', 'hạt điều bình phước', 'hạt óc chó', 'granola siêu hạt', 'bơ hạt', 'nutrio food'],
+  title: { default: 'NUTRIO Food – Hạt dinh dưỡng & Granola theo nhu cầu calo của bạn', template: '%s | NUTRIO Food' },
+  description:
+    'Hạt Macca, Hạnh nhân, Óc chó, Hạt điều, Granola sấy mộc. Tính BMI/TDEE miễn phí, thực đơn 7 ngày thông minh, lọc dị ứng và gợi ý sản phẩm cá nhân hóa.',
+  keywords: ['hạt dinh dưỡng', 'hạt macca', 'hạnh nhân', 'óc chó', 'hạt điều', 'granola', 'eat clean', 'keto', 'tdee'],
+  openGraph: { type: 'website', locale: 'vi_VN', siteName: 'NUTRIO Food' },
 };
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export const viewport: Viewport = { themeColor: '#2f6139', width: 'device-width', initialScale: 1 };
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="vi" className="scroll-smooth">
-      <body className={`${inter.variable} min-h-screen bg-slate-50 text-slate-900 antialiased flex flex-col`}>
-        {children}
-        <Toaster position="top-right" richColors />
+    <html lang="vi" className={`${body.variable} ${heading.variable}`}>
+      <body className="min-h-screen">
+        <Providers>{children}</Providers>
       </body>
     </html>
   );

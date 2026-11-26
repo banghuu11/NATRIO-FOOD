@@ -1,224 +1,69 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import {
-  Package,
-  Plus,
-  Search,
-  Eye,
-  Edit2,
-  Trash2,
-  Award,
-  Flame,
-  CheckCircle2,
-  Loader2,
-} from 'lucide-react';
-import { productService, ProductItem } from '@/services/product.service';
+import { keepPreviousData, useMutation, useQuery } from '@tanstack/react-query';
+import Link from 'next/link';
+import { useState } from 'react';
+import { Eye, EyeOff, Pencil, Plus, Search, Trash2 } from 'lucide-react';
+import { toast } from 'sonner';
+import { api, apiError, get } from '@/lib/api';
+import { cn, formatPrice } from '@/lib/utils';
+import { useAuth } from '@/stores/auth';
+import { useUi } from '@/stores/ui';
+import type { Paged } from '@/types';
+import { Card, PageHeader, Table } from '@/components/admin/kit';
+import { ButtonLink } from '@/components/ui/button';
+import { Input, Select } from '@/components/ui/form';
+import { Spinner } from '@/components/ui/feedback';
+import { Badge, NutriScore, Pagination, SmartImage } from '@/components/ui/misc';
 
-export default function AdminProductsPage() {
-  const [products, setProducts] = useState<ProductItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedNutriScore, setSelectedNutriScore] = useState('all');
+interface Row { id: number; name: string; slug: string; image: string; category: string; status: string; isFeatured: boolean; nutriScoreGrade: string | null; price: number | null; compareAtPrice: number | null; variantCount: number; stock: number; lowStock: boolean; soldCount: number; avgRating: number }
+const STATUS: Record<string, [string, 'green' | 'neutral' | 'warning' | 'danger']> = { active: ['Đang bán', 'green'], inactive: ['Đã ẩn', 'neutral'], draft: ['Nháp', 'warning'], discontinued: ['Ngừng bán', 'danger'] };
 
-  useEffect(() => {
-    async function fetchProducts() {
-      setLoading(true);
-      try {
-        const res = await productService.getProducts({
-          nutriScore: selectedNutriScore !== 'all' ? selectedNutriScore : undefined,
-          search: searchTerm || undefined,
-        });
-        setProducts(res.data || []);
-      } catch (err) {
-        console.error('Lỗi khi tải sản phẩm cho Admin:', err);
-      } finally {
-        setLoading(false);
-      }
-    }
-    fetchProducts();
-  }, [searchTerm, selectedNutriScore]);
+export default function AdminProducts() {
+  const can = useAuth((s) => s.can);
+  const ask = useUi((s) => s.ask);
+  const [qText, setQText] = useState('');
+  const [f, setF] = useState({ q: '', categoryId: '', status: '', page: 1 });
+  const meta = useQuery({ queryKey: ['admin-catalog-meta'], queryFn: () => get<{ categories: { id: number; name: string; parentId: number | null }[] }>('/admin/catalog/meta') });
+  const q = useQuery({ queryKey: ['admin-products', f], queryFn: () => get<Paged<Row>>('/admin/products', { q: f.q || undefined, categoryId: f.categoryId || undefined, status: f.status || undefined, page: f.page }), placeholderData: keepPreviousData });
+  const vis = useMutation({ mutationFn: ({ id, visible }: { id: number; visible: boolean }) => api.patch(`/admin/products/${id}/visibility`, { visible }), onSuccess: (r) => { toast.success((r.data as { message: string }).message); q.refetch(); }, onError: (e) => toast.error(apiError(e)) });
+  const del = useMutation({ mutationFn: (id: number) => api.delete(`/admin/products/${id}`), onSuccess: () => { toast.success('Đã xóa sản phẩm'); q.refetch(); }, onError: (e) => toast.error(apiError(e)) });
+  const write = can('product.write');
 
   return (
-    <div className="space-y-6">
-      {/* 1. Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-black text-slate-900 tracking-tight">
-            Quản Lý Sản Phẩm & Dinh Dưỡng
-          </h1>
-          <p className="text-sm text-slate-500 mt-1">
-            Dữ liệu kết nối trực tiếp CSDL PostgreSQL: Quản lý danh mục, giá bán, thành phần dinh dưỡng và xếp hạng Nutri-Score.
-          </p>
+    <div>
+      <PageHeader title="Sản phẩm" description={`${q.data?.meta.total ?? '…'} sản phẩm`} actions={write && <ButtonLink href="/admin/products/new"><Plus className="h-4 w-4" /> Thêm sản phẩm</ButtonLink>} />
+      <Card padded={false}>
+        <div className="flex flex-wrap gap-2 p-4">
+          <form className="min-w-56 flex-1" onSubmit={(e) => { e.preventDefault(); setF({ ...f, q: qText, page: 1 }); }}><Input value={qText} onChange={(e) => setQText(e.target.value)} placeholder="Tên sản phẩm hoặc SKU…" leftIcon={<Search className="h-4 w-4" />} /></form>
+          <Select className="w-52" value={f.categoryId} onChange={(e) => setF({ ...f, categoryId: e.target.value, page: 1 })}><option value="">Tất cả danh mục</option>{meta.data?.categories.map((c) => <option key={c.id} value={c.id}>{c.parentId ? '— ' : ''}{c.name}</option>)}</Select>
+          <Select className="w-40" value={f.status} onChange={(e) => setF({ ...f, status: e.target.value, page: 1 })}><option value="">Mọi trạng thái</option>{Object.entries(STATUS).map(([k, [l]]) => <option key={k} value={k}>{l}</option>)}</Select>
         </div>
-
-        <button
-          type="button"
-          className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-2 shadow-lg shadow-emerald-600/20 cursor-pointer"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Thêm Sản Phẩm Mới</span>
-        </button>
-      </div>
-
-      {/* 2. Filter & Search Bar */}
-      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
-        <div className="relative w-full md:w-96">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-          <input
-            type="text"
-            placeholder="Tìm theo tên sản phẩm..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 transition"
-          />
-        </div>
-
-        <div className="flex items-center gap-2 w-full md:w-auto overflow-x-auto">
-          <span className="text-xs font-bold text-slate-400">Nutri-Score:</span>
-          {['all', 'A', 'B', 'C', 'D'].map((score) => (
-            <button
-              key={score}
-              type="button"
-              onClick={() => setSelectedNutriScore(score)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
-                selectedNutriScore === score
-                  ? 'bg-slate-900 text-white'
-                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-              }`}
-            >
-              {score === 'all' ? 'Tất cả' : `Grade ${score}`}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* 3. Products Table */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-        {loading ? (
-          <div className="py-20 flex flex-col items-center justify-center gap-3">
-            <Loader2 className="w-8 h-8 text-emerald-600 animate-spin" />
-            <span className="text-xs font-semibold text-slate-500">Đang tải sản phẩm từ máy chủ Backend...</span>
-          </div>
-        ) : products.length === 0 ? (
-          <div className="py-16 text-center text-slate-500 text-xs">
-            Không tìm thấy sản phẩm nào phù hợp.
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase tracking-wider">
-                <tr>
-                  <th className="py-3.5 px-4">Sản Phẩm</th>
-                  <th className="py-3.5 px-4">Danh Mục</th>
-                  <th className="py-3.5 px-4">Nutri-Score</th>
-                  <th className="py-3.5 px-4">Dinh Dưỡng (100g)</th>
-                  <th className="py-3.5 px-4">Giá Bán</th>
-                  <th className="py-3.5 px-4">Trạng Thái</th>
-                  <th className="py-3.5 px-4 text-right">Thao Tác</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
-                {products.map((item) => (
-                  <tr key={item.id} className="hover:bg-slate-50/80 transition">
-                    {/* Product & Image */}
-                    <td className="py-3.5 px-4">
-                      <div className="flex items-center gap-3">
-                        <img
-                          src={item.primaryImage}
-                          alt={item.name}
-                          className="w-11 h-11 rounded-xl object-cover border border-slate-200"
-                        />
-                        <div>
-                          <div className="font-bold text-slate-900 line-clamp-1">{item.name}</div>
-                          <div className="text-[11px] text-slate-400 font-mono">/{item.slug}</div>
-                        </div>
-                      </div>
-                    </td>
-
-                    {/* Category */}
-                    <td className="py-3.5 px-4 font-semibold text-slate-600">{item.category?.name}</td>
-
-                    {/* Nutri-Score */}
-                    <td className="py-3.5 px-4">
-                      <span
-                        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md font-black text-xs ${
-                          item.nutriScoreGrade === 'A'
-                            ? 'bg-emerald-100 text-emerald-800'
-                            : item.nutriScoreGrade === 'B'
-                            ? 'bg-lime-100 text-lime-900'
-                            : 'bg-amber-100 text-amber-800'
-                        }`}
-                      >
-                        <Award className="w-3.5 h-3.5" />
-                        Grade {item.nutriScoreGrade}
-                      </span>
-                    </td>
-
-                    {/* Macros */}
-                    <td className="py-3.5 px-4">
-                      <div className="text-slate-900 font-bold flex items-center gap-1">
-                        <Flame className="w-3.5 h-3.5 text-amber-500" />
-                        <span>{item.nutrition?.caloriesKcal || 0} kcal</span>
-                      </div>
-                      <div className="text-[11px] text-slate-400">
-                        Đạm: {item.nutrition?.proteinG || 0}g • Carb: {item.nutrition?.carbG || 0}g
-                      </div>
-                    </td>
-
-                    {/* Price */}
-                    <td className="py-3.5 px-4">
-                      <div className="font-black text-slate-900">
-                        {item.defaultVariant?.price ? item.defaultVariant.price.toLocaleString('vi-VN') : 0} đ
-                      </div>
-                      {item.defaultVariant?.compareAtPrice && (
-                        <div className="text-[11px] text-slate-400 line-through">
-                          {item.defaultVariant.compareAtPrice.toLocaleString('vi-VN')} đ
-                        </div>
-                      )}
-                    </td>
-
-                    {/* Status */}
-                    <td className="py-3.5 px-4">
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold text-[11px]">
-                        <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                        Đang bán
-                      </span>
-                    </td>
-
-                    {/* Actions */}
-                    <td className="py-3.5 px-4 text-right">
-                      <div className="flex items-center justify-end gap-1.5">
-                        <button
-                          type="button"
-                          title="Xem chi tiết"
-                          className="p-1.5 rounded-lg text-slate-400 hover:text-slate-900 hover:bg-slate-100 transition"
-                        >
-                          <Eye className="w-4 h-4" />
-                        </button>
-                        <button
-                          type="button"
-                          title="Chỉnh sửa"
-                          className="p-1.5 rounded-lg text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 transition"
-                        >
-                          <Edit2 className="w-4 h-4" />
-                        </button>
-                        <button
-                          type="button"
-                          title="Xóa"
-                          className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+        {q.isLoading ? <Spinner /> : (
+          <Table head={['Sản phẩm', 'Danh mục', 'Giá bán', 'Tồn kho', 'Đã bán', 'Trạng thái', '']} empty={!q.data?.data.length}>
+            {q.data?.data.map((p) => (
+              <tr key={p.id} className="hover:bg-sand-50/60">
+                <td className="px-4 py-2.5"><div className="flex items-center gap-3"><SmartImage src={p.image} alt="" width={44} height={44} className="h-11 w-11 rounded-lg object-cover" /><div><Link href={`/admin/products/${p.id}`} className="font-medium hover:text-forest-700">{p.name}</Link><div className="flex items-center gap-2 text-xs text-muted">{p.variantCount} quy cách <NutriScore grade={p.nutriScoreGrade} />{p.isFeatured && <Badge tone="dark">Nổi bật</Badge>}</div></div></div></td>
+                <td className="px-4 text-muted">{p.category}</td>
+                <td className="px-4 whitespace-nowrap"><b>{formatPrice(p.price)}</b>{p.compareAtPrice && <div className="text-xs text-muted line-through">{formatPrice(p.compareAtPrice)}</div>}</td>
+                <td className={cn('px-4 font-semibold', p.lowStock ? 'text-danger' : '')}>{p.stock}{p.lowStock && <div className="text-[11px] font-normal">Sắp hết</div>}</td>
+                <td className="px-4">{p.soldCount}</td>
+                <td className="px-4"><Badge tone={STATUS[p.status]?.[1]}>{STATUS[p.status]?.[0]}</Badge></td>
+                <td className="px-4">
+                  {write && (
+                    <div className="flex justify-end gap-1">
+                      <button onClick={() => vis.mutate({ id: p.id, visible: p.status !== 'active' })} className="cursor-pointer rounded-lg p-2 text-muted hover:bg-sand-100" title={p.status === 'active' ? 'Ẩn' : 'Hiển thị'}>{p.status === 'active' ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button>
+                      <Link href={`/admin/products/${p.id}`} className="rounded-lg p-2 text-muted hover:bg-sand-100" title="Sửa"><Pencil className="h-4 w-4" /></Link>
+                      <button onClick={async () => (await ask({ title: `Xóa “${p.name}”?`, description: 'Sản phẩm sẽ bị gỡ khỏi cửa hàng và giỏ hàng của khách. Lịch sử đơn hàng vẫn được giữ nguyên.', confirmLabel: 'Xóa sản phẩm', tone: 'danger' })).ok && del.mutate(p.id)} className="cursor-pointer rounded-lg p-2 text-muted hover:bg-red-50 hover:text-danger" title="Xóa"><Trash2 className="h-4 w-4" /></button>
+                    </div>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </Table>
         )}
-      </div>
+        {q.data && <div className="border-t border-line p-4"><Pagination page={f.page} totalPages={q.data.meta.totalPages} onChange={(page) => setF({ ...f, page })} /></div>}
+      </Card>
     </div>
   );
 }

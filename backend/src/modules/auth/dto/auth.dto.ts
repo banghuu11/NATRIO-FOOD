@@ -1,41 +1,82 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsEmail, IsNotEmpty, IsOptional, IsString, MinLength } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Transform } from 'class-transformer';
+import { IsEmail, IsNotEmpty, IsOptional, IsString, Matches, MaxLength, MinLength } from 'class-validator';
+
+const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
+const lower = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim().toLowerCase() : value);
+
+export const PASSWORD_RULE = /^(?=.*[A-Za-z])(?=.*\d).{8,64}$/;
+export const PASSWORD_MESSAGE = 'Mật khẩu cần 8–64 ký tự, gồm cả chữ và số';
+export const PHONE_RULE = /^(0|\+84)(3|5|7|8|9)\d{8}$/;
 
 export class RegisterDto {
-  @ApiProperty({ example: 'nguyenvanan@gmail.com', description: 'Địa chỉ email' })
+  @ApiProperty({ example: 'nguyenvanan@gmail.com' })
+  @Transform(lower)
   @IsEmail({}, { message: 'Email không đúng định dạng' })
-  @IsNotEmpty({ message: 'Email không được để trống' })
   email: string;
 
-  @ApiProperty({ example: 'Password@123', description: 'Mật khẩu (tối thiểu 6 ký tự)' })
+  @ApiProperty({ example: 'Password123' })
   @IsString()
-  @MinLength(6, { message: 'Mật khẩu tối thiểu phải từ 6 ký tự trở lên' })
+  @Matches(PASSWORD_RULE, { message: PASSWORD_MESSAGE })
   password: string;
 
-  @ApiProperty({ example: 'Nguyễn Văn An', description: 'Họ và tên đầy đủ' })
+  @ApiProperty({ example: 'Nguyễn Văn An' })
+  @Transform(trim)
   @IsString()
   @IsNotEmpty({ message: 'Họ và tên không được để trống' })
+  @MaxLength(150)
   fullName: string;
 
-  @ApiProperty({ example: '0901234567', required: false, description: 'Số điện thoại' })
+  @ApiPropertyOptional({ example: '0901234567' })
   @IsOptional()
-  @IsString()
+  @Transform(trim)
+  @Matches(PHONE_RULE, { message: 'Số điện thoại không hợp lệ' })
   phone?: string;
 
-  @ApiProperty({ example: 'EATCLEAN88', required: false, description: 'Mã giới thiệu (nếu có)' })
+  @ApiPropertyOptional({ example: 'EATCLEAN' })
   @IsOptional()
   @IsString()
+  @MaxLength(12)
   referralCode?: string;
 }
 
 export class LoginDto {
-  @ApiProperty({ example: 'admin@nutrio.vn', description: 'Địa chỉ email' })
+  @ApiProperty({ example: 'admin@nutrio.vn' })
+  @Transform(lower)
   @IsEmail({}, { message: 'Email không đúng định dạng' })
-  @IsNotEmpty({ message: 'Email không được để trống' })
   email: string;
 
-  @ApiProperty({ example: 'Admin@123', description: 'Mật khẩu đăng nhập' })
+  @ApiProperty({ example: 'Admin@123' })
   @IsString()
   @IsNotEmpty({ message: 'Mật khẩu không được để trống' })
   password: string;
+}
+
+export class ForgotPasswordDto {
+  @ApiProperty({ example: 'lan@example.com' })
+  @Transform(lower)
+  @IsEmail({}, { message: 'Email không đúng định dạng' })
+  email: string;
+}
+
+export class ResetPasswordDto {
+  @ApiProperty()
+  @IsString()
+  @MinLength(20)
+  token: string;
+
+  @ApiProperty()
+  @Matches(PASSWORD_RULE, { message: PASSWORD_MESSAGE })
+  password: string;
+}
+
+export class ChangePasswordDto {
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty({ message: 'Vui lòng nhập mật khẩu hiện tại' })
+  currentPassword: string;
+
+  @ApiProperty()
+  @Matches(PASSWORD_RULE, { message: PASSWORD_MESSAGE })
+  newPassword: string;
 }
