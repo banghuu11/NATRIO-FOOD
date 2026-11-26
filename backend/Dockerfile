@@ -11,12 +11,13 @@ RUN apk add --no-cache libc6-compat openssl
 FROM base AS deps
 COPY package.json package-lock.json ./
 COPY prisma ./prisma/
-RUN npm ci
+RUN npm ci --ignore-scripts
 
 # ==========================================
 # 3. Builder Stage
 # ==========================================
 FROM base AS builder
+ENV DATABASE_URL="postgresql://dummy:dummy@localhost:5432/dummy?schema=public"
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npx prisma generate
