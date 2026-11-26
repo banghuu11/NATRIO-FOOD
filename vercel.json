@@ -7,8 +7,7 @@
     },
     "backend": {
       "root": "backend/",
-      "framework": "nestjs",
-      "buildCommand": "npx prisma generate && npm run build"
+      "framework": "nestjs"
     }
   },
   "rewrites": [
